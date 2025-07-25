@@ -4,16 +4,17 @@ import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 import rehypeHighlight from 'rehype-highlight';
-import rehypeRaw from 'rehype-raw';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
-import { Loader2, ChevronDown, Sigma } from 'lucide-react';
+import { Loader2, ChevronDown, Sigma, Zap } from 'lucide-react';
 
 import { ChatMessage, UploadedFile } from '../../types';
 import { FileDisplay } from './FileDisplay';
 import { CodeBlock } from './CodeBlock';
 import { translations } from '../../utils/appUtils';
 import { GroundedResponse } from './GroundedResponse';
+import { MermaidBlock } from './MermaidBlock';
+import { GraphvizBlock } from './GraphvizBlock';
 
 const renderThoughtsMarkdown = (content: string) => {
   const rawMarkup = marked.parse(content || ''); 
@@ -50,16 +51,46 @@ const TokenDisplay: React.FC<{ message: ChatMessage; t: (key: keyof typeof trans
   return <span className="text-xs text-[var(--theme-text-tertiary)] font-light tabular-nums pt-0.5 flex items-center" title="Token Usage"><Sigma size={10} className="mr-1.5 opacity-80" />{parts.join(' | ')}<span className="ml-1">{t('tokens_unit')}</span></span>;
 };
 
+const TokenRateDisplay: React.FC<{ message: ChatMessage }> = ({ message }) => {
+  const { completionTokens, generationStartTime, generationEndTime, isLoading } = message;
+
+  if (isLoading || !completionTokens || !generationStartTime || !generationEndTime) {
+    return null;
+  }
+  
+  const generationTimeMs = new Date(generationEndTime).getTime() - new Date(generationStartTime).getTime();
+  if (generationTimeMs <= 0) {
+    return null;
+  }
+
+  const generationTimeSeconds = generationTimeMs / 1000;
+  const tokensPerSecond = completionTokens / generationTimeSeconds;
+
+  if (tokensPerSecond <= 0) {
+      return null;
+  }
+
+  return (
+    <span className="text-xs text-[var(--theme-text-tertiary)] font-light tabular-nums pt-0.5 flex items-center" title="Tokens per second">
+        <Zap size={10} className="mr-1.5 opacity-80 text-yellow-500" />
+        {tokensPerSecond.toFixed(1)} tokens/s
+    </span>
+  );
+};
+
 interface MessageContentProps {
     message: ChatMessage;
     onImageClick: (file: UploadedFile) => void;
     onOpenHtmlPreview: (html: string, options?: { initialTrueFullscreen?: boolean }) => void;
     showThoughts: boolean;
-    baseFontSize: number; 
+    baseFontSize: number;
+    expandCodeBlocksByDefault: boolean;
+    isMermaidRenderingEnabled: boolean;
+    isGraphvizRenderingEnabled: boolean;
     t: (key: keyof typeof translations) => string;
 }
 
-export const MessageContent: React.FC<MessageContentProps> = React.memo(({ message, onImageClick, onOpenHtmlPreview, showThoughts, baseFontSize, t }) => {
+export const MessageContent: React.FC<MessageContentProps> = React.memo(({ message, onImageClick, onOpenHtmlPreview, showThoughts, baseFontSize, expandCodeBlocksByDefault, isMermaidRenderingEnabled, isGraphvizRenderingEnabled, t }) => {
     const { content, files, isLoading, thoughts, generationStartTime, generationEndTime, audioSrc, groundingMetadata } = message;
     
     const showPrimaryThinkingIndicator = isLoading && !content && !audioSrc && (!showThoughts || !thoughts);
@@ -108,11 +139,51 @@ export const MessageContent: React.FC<MessageContentProps> = React.memo(({ messa
 
     const components = useMemo(() => ({
       pre: (props: any) => {
-        const { node, ...rest } = props;
-        const children = (props.children[0] && props.children[0].type === 'code') ? props.children[0] : props.children;
-        return <CodeBlock {...rest} onOpenHtmlPreview={onOpenHtmlPreview}>{children}</CodeBlock>;
+        const { node, children, ...rest } = props;
+        const codeElement = React.Children.toArray(children).find(
+          (child: any) => child.type === 'code'
+        ) as React.ReactElement | undefined;
+
+        const codeClassName = codeElement?.props?.className || '';
+        const codeContent = codeElement?.props?.children;
+        const langMatch = codeClassName.match(/language-(\S+)/);
+        const language = langMatch ? langMatch[1] : '';
+        const isGraphviz = language === 'graphviz' || language === 'dot';
+
+        if (isMermaidRenderingEnabled && language === 'mermaid' && typeof codeContent === 'string') {
+          return (
+            <div>
+              <MermaidBlock code={codeContent} onImageClick={onImageClick} />
+              <CodeBlock {...rest} className={codeClassName} onOpenHtmlPreview={onOpenHtmlPreview} expandCodeBlocksByDefault={expandCodeBlocksByDefault}>
+                {children}
+              </CodeBlock>
+            </div>
+          );
+        }
+
+        if (isGraphvizRenderingEnabled && isGraphviz && typeof codeContent === 'string') {
+          return (
+            <div>
+              <GraphvizBlock code={codeContent} />
+              <CodeBlock {...rest} className={codeClassName} onOpenHtmlPreview={onOpenHtmlPreview} expandCodeBlocksByDefault={expandCodeBlocksByDefault}>
+                {children}
+              </CodeBlock>
+            </div>
+          );
+        }
+        
+        return (
+          <CodeBlock 
+            {...rest} 
+            className={codeClassName} 
+            onOpenHtmlPreview={onOpenHtmlPreview} 
+            expandCodeBlocksByDefault={expandCodeBlocksByDefault}
+          >
+            {children}
+          </CodeBlock>
+        );
       }
-    }), [onOpenHtmlPreview]);
+    }), [onOpenHtmlPreview, expandCodeBlocksByDefault, onImageClick, isMermaidRenderingEnabled, isGraphvizRenderingEnabled]);
 
     return (
         <>
@@ -162,10 +233,10 @@ export const MessageContent: React.FC<MessageContentProps> = React.memo(({ messa
             )}
 
             {content && groundingMetadata ? (
-              <GroundedResponse text={content} metadata={groundingMetadata} onOpenHtmlPreview={onOpenHtmlPreview} />
+              <GroundedResponse text={content} metadata={groundingMetadata} onOpenHtmlPreview={onOpenHtmlPreview} expandCodeBlocksByDefault={expandCodeBlocksByDefault} />
             ) : content && (
                 <div className="markdown-body" style={{ fontSize: `${baseFontSize}px` }}> 
-                    <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeRaw, rehypeKatex, rehypeHighlight]} components={components}>
+                    <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex, rehypeHighlight]} components={components}>
                         {content}
                     </ReactMarkdown>
                 </div>
@@ -178,8 +249,9 @@ export const MessageContent: React.FC<MessageContentProps> = React.memo(({ messa
             )}
             
             {(message.role === 'model' || (message.role === 'error' && generationStartTime)) && (
-                <div className="mt-1 sm:mt-1.5 flex justify-end items-center gap-2 sm:gap-3">
+                <div className="mt-1 sm:mt-1.5 flex justify-end items-center gap-2 sm:gap-3 flex-wrap">
                     <TokenDisplay message={message} t={t} />
+                    <TokenRateDisplay message={message} />
                     {(isLoading || (generationStartTime && generationEndTime)) && <MessageTimer startTime={generationStartTime} endTime={generationEndTime} isLoading={isLoading} />}
                 </div>
             )}

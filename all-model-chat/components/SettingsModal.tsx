@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { AppSettings } from '../types';
-import { Settings2, X, SlidersHorizontal, KeyRound, Bot } from 'lucide-react';
+import { Settings2, X, SlidersHorizontal, KeyRound, Bot, Info } from 'lucide-react';
 import { DEFAULT_APP_SETTINGS } from '../constants/appConstants';
 import { Theme } from '../constants/themeConstants';
 import { translations, getResponsiveValue } from '../utils/appUtils';
@@ -9,7 +9,9 @@ import { AppearanceSection } from './settings/AppearanceSection';
 import { ChatBehaviorSection } from './settings/ChatBehaviorSection';
 import { DataManagementSection } from './settings/DataManagementSection';
 import { SettingsActions } from './settings/SettingsActions';
+import { AboutSection } from './settings/AboutSection';
 import { ModelOption } from '../types';
+import { Modal } from './shared/Modal';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -23,17 +25,21 @@ interface SettingsModalProps {
   onClearAllHistory: () => void;
   onClearCache: () => void;
   onOpenLogViewer: () => void;
+  onInstallPwa: () => void;
+  isInstallable: boolean;
+  onImportSettings: (file: File) => void;
+  onExportSettings: (includeHistory: boolean) => void;
   t: (key: keyof typeof translations) => string;
 }
 
-type SettingsTab = 'general' | 'api' | 'model';
+type SettingsTab = 'general' | 'api' | 'model' | 'about';
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
   isOpen, onClose, currentSettings, availableModels, availableThemes, 
-  onSave, isModelsLoading, modelsLoadingError, onClearAllHistory, onClearCache, onOpenLogViewer, t
+  onSave, isModelsLoading, modelsLoadingError, onClearAllHistory, onClearCache, onOpenLogViewer,
+  onInstallPwa, isInstallable, t, onImportSettings, onExportSettings
 }) => {
   const [settings, setSettings] = useState(currentSettings);
-  const [isActuallyOpen, setIsActuallyOpen] = useState(isOpen);
   const [activeTab, setActiveTab] = useState<SettingsTab>('general');
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   
@@ -43,17 +49,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   useEffect(() => {
     if (isOpen) {
       setSettings(currentSettings);
-      setIsActuallyOpen(true);
       setActiveTab('general');
       const timer = setTimeout(() => closeButtonRef.current?.focus(), 100);
-      return () => clearTimeout(timer);
-    } else {
-      const timer = setTimeout(() => setIsActuallyOpen(false), 300);
       return () => clearTimeout(timer);
     }
   }, [isOpen, currentSettings]);
 
-  if (!isActuallyOpen) return null;
+  if (!isOpen) return null;
 
   const handleClose = () => { if (isOpen) onClose(); };
   const handleSave = () => { onSave(settings); };
@@ -67,16 +69,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     { id: 'general', label: 'General', icon: <SlidersHorizontal size={tabIconSize} /> },
     { id: 'api', label: 'API', icon: <KeyRound size={tabIconSize} /> },
     { id: 'model', label: 'Model', icon: <Bot size={tabIconSize} /> },
+    { id: 'about', label: 'About', icon: <Info size={tabIconSize} /> },
   ];
 
   return (
-    <div 
-      className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-2 sm:p-4 backdrop-blur-sm" 
-      role="dialog" aria-modal="true" aria-labelledby="settings-title" onClick={handleClose}
-    >
+    <Modal isOpen={isOpen} onClose={handleClose} noPadding contentClassName="w-full h-full sm:w-auto sm:h-auto">
       <div 
-        className={`bg-[var(--theme-bg-primary)] rounded-xl shadow-premium w-full max-w-md sm:max-w-3xl flex flex-col max-h-[90vh] sm:h-[85vh] sm:max-h-[750px] ${isOpen ? 'modal-enter-animation' : 'modal-exit-animation'}`}
-        onClick={(e) => e.stopPropagation()}
+        className="bg-[var(--theme-bg-primary)] w-full h-full sm:rounded-xl sm:shadow-premium sm:w-[clamp(37.5rem,50vw,56rem)] sm:h-[85vh] sm:max-h-[800px] flex flex-col"
+        role="document"
       >
         {/* Header */}
         <div className="flex-shrink-0 flex justify-between items-center p-3 sm:p-4 border-b border-[var(--theme-border-primary)]">
@@ -88,23 +88,33 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           </button>
         </div>
 
-        <div className="flex flex-col sm:flex-row flex-grow min-h-0">
-          {/* Nav */}
-          <nav className="flex-shrink-0 w-full sm:w-48 bg-[var(--theme-bg-secondary)] sm:border-r border-b sm:border-b-0 border-[var(--theme-border-primary)] flex sm:flex-col p-2 sm:p-3 sm:space-y-1 overflow-x-auto sm:overflow-x-visible">
-            {tabs.map(tab => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={`settings-nav-button w-full flex-shrink-0 sm:flex-shrink-1 flex items-center justify-start gap-3 px-3 py-2.5 text-sm font-medium rounded-md ${activeTab === tab.id ? 'active' : ''}`}
-              >
-                {tab.icon}
-                <span>{tab.label}</span>
-              </button>
-            ))}
-          </nav>
+        <div className="flex-grow flex flex-col sm:flex-row min-h-0">
+          {/* Tab Navigation */}
+          <div className="flex-shrink-0 sm:w-48 border-b sm:border-b-0 sm:border-r border-[var(--theme-border-primary)] bg-[var(--theme-bg-primary)] overflow-y-auto custom-scrollbar">
+            <nav className="p-2 flex sm:flex-col space-x-1 sm:space-x-0 sm:space-y-1" aria-label="Tabs" role="tablist">
+              {tabs.map(tab => (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`flex-1 sm:w-full flex items-center justify-center sm:justify-start gap-2 px-3 py-2 text-sm font-medium rounded-md transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-[var(--theme-bg-secondary)] focus:ring-[var(--theme-border-focus)]
+                    ${activeTab === tab.id
+                      ? 'bg-[var(--theme-bg-accent)] text-[var(--theme-text-accent)] shadow'
+                      : 'text-[var(--theme-text-secondary)] hover:bg-[var(--theme-bg-input)] hover:text-[var(--theme-text-primary)]'
+                    }
+                  `}
+                  role="tab"
+                  aria-selected={activeTab === tab.id}
+                  aria-controls={`tab-panel-${tab.id}`}
+                >
+                  {tab.icon}
+                  <span>{tab.label}</span>
+                </button>
+              ))}
+            </nav>
+          </div>
           
           {/* Content Panel */}
-          <div className="flex-grow min-h-0 overflow-y-auto custom-scrollbar">
+          <div id={`tab-panel-${activeTab}`} role="tabpanel" className="flex-grow min-h-0 sm:min-w-0 overflow-y-auto custom-scrollbar bg-[var(--theme-bg-secondary)]">
             <div className="p-3 sm:p-5 tab-content-enter-active">
               {activeTab === 'general' && (
                 <div className="space-y-4">
@@ -122,6 +132,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     onClearHistory={() => { onClearAllHistory(); onClose(); }}
                     onClearCache={onClearCache}
                     onOpenLogViewer={onOpenLogViewer}
+                    onInstallPwa={onInstallPwa}
+                    isInstallable={isInstallable}
+                    onImportSettings={onImportSettings}
+                    onExportSettings={onExportSettings}
                     t={t}
                   />
                 </div>
@@ -164,8 +178,21 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   setIsTranscriptionThinkingEnabled={(val) => updateSetting('isTranscriptionThinkingEnabled', val)}
                   useFilesApiForImages={settings.useFilesApiForImages}
                   setUseFilesApiForImages={(val) => updateSetting('useFilesApiForImages', val)}
+                  expandCodeBlocksByDefault={settings.expandCodeBlocksByDefault}
+                  setExpandCodeBlocksByDefault={(val) => updateSetting('expandCodeBlocksByDefault', val)}
+                  isAutoTitleEnabled={settings.isAutoTitleEnabled}
+                  setIsAutoTitleEnabled={(val) => updateSetting('isAutoTitleEnabled', val)}
+                  isMermaidRenderingEnabled={settings.isMermaidRenderingEnabled}
+                  setIsMermaidRenderingEnabled={(val) => updateSetting('isMermaidRenderingEnabled', val)}
+                  isGraphvizRenderingEnabled={settings.isGraphvizRenderingEnabled ?? true}
+                  setIsGraphvizRenderingEnabled={(val) => updateSetting('isGraphvizRenderingEnabled', val)}
+                  isCompletionNotificationEnabled={settings.isCompletionNotificationEnabled ?? false}
+                  setIsCompletionNotificationEnabled={(val) => updateSetting('isCompletionNotificationEnabled', val)}
                   t={t}
                 />
+              )}
+              {activeTab === 'about' && (
+                <AboutSection t={t} />
               )}
             </div>
           </div>
@@ -181,6 +208,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           />
         </div>
       </div>
-    </div>
+    </Modal>
   );
 };

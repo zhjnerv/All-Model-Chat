@@ -1,3 +1,5 @@
+
+
 import React, { useState, useRef, useLayoutEffect } from 'react';
 import { Check, ClipboardCopy, Maximize, ExternalLink, ChevronDown, ChevronUp, FileCode2 } from 'lucide-react';
 
@@ -11,15 +13,16 @@ interface CodeBlockProps {
   children: React.ReactNode;
   className?: string;
   onOpenHtmlPreview: (html: string, options?: { initialTrueFullscreen?: boolean }) => void;
+  expandCodeBlocksByDefault: boolean;
 }
 
 const COLLAPSE_THRESHOLD_PX = 150;
 
-export const CodeBlock: React.FC<CodeBlockProps> = ({ children, className, onOpenHtmlPreview }) => {
+export const CodeBlock: React.FC<CodeBlockProps> = ({ children, className, onOpenHtmlPreview, expandCodeBlocksByDefault }) => {
     const preRef = useRef<HTMLPreElement>(null);
     const codeText = useRef<string>('');
     const [isOverflowing, setIsOverflowing] = useState(false);
-    const [isExpanded, setIsExpanded] = useState(false);
+    const [isExpanded, setIsExpanded] = useState(expandCodeBlocksByDefault);
     const [copied, setCopied] = useState(false);
     const hasUserInteracted = useRef(false);
 
@@ -32,13 +35,15 @@ export const CodeBlock: React.FC<CodeBlockProps> = ({ children, className, onOpe
             codeText.current = codeElement.innerText;
         }
 
-        const doesOverflow = preElement.scrollHeight > COLLAPSE_THRESHOLD_PX;
-        setIsOverflowing(doesOverflow);
-        
+        const isCurrentlyOverflowing = preElement.scrollHeight > COLLAPSE_THRESHOLD_PX;
+        setIsOverflowing(isCurrentlyOverflowing);
+
+        // If the user hasn't manually toggled this specific block,
+        // its state should reflect the global setting.
         if (!hasUserInteracted.current) {
-            setIsExpanded(!doesOverflow);
+            setIsExpanded(expandCodeBlocksByDefault);
         }
-    }, [children]);
+    }, [children, expandCodeBlocksByDefault]);
 
     const handleToggleExpand = () => {
         hasUserInteracted.current = true;
@@ -57,7 +62,10 @@ export const CodeBlock: React.FC<CodeBlockProps> = ({ children, className, onOpe
     };
 
     const codeContent = React.Children.only(children) as React.ReactElement;
-    let language = className?.replace('language-', '') || 'txt';
+    
+    const langMatch = className?.match(/language-(\S+)/);
+    let language = langMatch ? langMatch[1] : 'txt';
+
     let mimeType = 'text/plain';
     if (language === 'html' || language === 'xml' || language === 'svg') mimeType = 'text/html';
     else if (language === 'javascript' || language === 'js' || language === 'typescript' || language === 'ts') mimeType = 'application/javascript';

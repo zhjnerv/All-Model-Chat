@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { SavedScenario, PreloadedMessage } from '../types';
-import { X, PlusCircle, Trash2, Edit3, UploadCloud, Download, AlertTriangle, CheckCircle, Loader2, MessageSquare, User, Bot, Zap, Play, FileUp, FileDown, Save } from 'lucide-react';
+import { X, PlusCircle, Trash2, Edit3, UploadCloud, Download, AlertTriangle, CheckCircle, Loader2, MessageSquare, Zap, Play, Save } from 'lucide-react';
 import { translations, getResponsiveValue } from '../utils/appUtils';
+import { Modal } from './shared/Modal';
+import { ScenarioEditor } from './ScenarioEditor';
 
 interface PreloadedMessagesModalProps {
   isOpen: boolean;
@@ -42,7 +44,6 @@ export const PreloadedMessagesModal: React.FC<PreloadedMessagesModalProps> = ({
   
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(null);
   const [isProcessingImport, setIsProcessingImport] = useState(false);
-  const [isActuallyOpen, setIsActuallyOpen] = useState(isOpen);
 
   const importFileRef = useRef<HTMLInputElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
@@ -52,20 +53,16 @@ export const PreloadedMessagesModal: React.FC<PreloadedMessagesModalProps> = ({
 
   useEffect(() => {
     if (isOpen) {
-      setIsActuallyOpen(true);
       setScenarios(savedScenarios);
       setView('list');
       setEditingScenario(null);
       setFeedback(null);
       const timer = setTimeout(() => closeButtonRef.current?.focus(), 100);
       return () => clearTimeout(timer);
-    } else {
-      const timer = setTimeout(() => setIsActuallyOpen(false), 300);
-      return () => clearTimeout(timer);
     }
   }, [isOpen, savedScenarios]);
 
-  if (!isActuallyOpen) return null;
+  if (!isOpen) return null;
 
   const handleClose = () => { if (isOpen) onClose(); };
 
@@ -176,7 +173,7 @@ export const PreloadedMessagesModal: React.FC<PreloadedMessagesModalProps> = ({
                   <div className="flex-shrink-0 flex items-center gap-1 sm:gap-1.5 ml-1">
                       <button onClick={() => handleLoadAndClose(scenario.messages)} className="p-1 sm:p-1.5 text-[var(--theme-text-tertiary)] hover:text-green-500" title="Load Scenario"><Play size={actionIconSize} /></button>
                       <button onClick={() => handleStartEdit(scenario)} className="p-1 sm:p-1.5 text-[var(--theme-text-tertiary)] hover:text-[var(--theme-text-link)]" title={t('scenarios_edit_title')}><Edit3 size={actionIconSize-2} /></button>
-                      <button onClick={() => handleExport(scenario)} className="p-1 sm:p-1.5 text-[var(--theme-text-tertiary)] hover:text-[var(--theme-text-link)]" title={t('scenarios_export_button')}><Download size={actionIconSize} /></button>
+                      <button onClick={() => handleExport(scenario)} className="p-1 sm:p-1.5 text-[var(--theme-text-tertiary)] hover:text-[var(--theme-text-link)]" title={t('export')}><Download size={actionIconSize} /></button>
                       <button onClick={() => handleDeleteScenario(scenario.id)} className="p-1 sm:p-1.5 text-[var(--theme-text-tertiary)] hover:text-[var(--theme-text-danger)]" title={t('scenarios_delete_title')}><Trash2 size={actionIconSize-2} /></button>
                   </div>
                 </li>
@@ -195,7 +192,7 @@ export const PreloadedMessagesModal: React.FC<PreloadedMessagesModalProps> = ({
             </div>
              <div className="flex flex-col sm:flex-row items-center justify-end gap-2 sm:gap-3 pt-2 sm:pt-3 border-t border-[var(--theme-border-secondary)]">
                 <button onClick={handleImportClick} disabled={isProcessingImport} className="w-full sm:w-auto px-3 py-1.5 sm:px-4 sm:py-2 text-xs sm:text-sm bg-[var(--theme-bg-secondary)] hover:bg-[var(--theme-border-primary)] text-[var(--theme-text-primary)] rounded-md transition-colors flex items-center justify-center gap-1 sm:gap-1.5 disabled:opacity-60 disabled:cursor-not-allowed" title={t('scenarios_import_title')}>
-                    {isProcessingImport ? <Loader2 size={actionIconSize} className="animate-spin" /> : <UploadCloud size={actionIconSize} />} {t('scenarios_import_button')}
+                    {isProcessingImport ? <Loader2 size={actionIconSize} className="animate-spin" /> : <UploadCloud size={actionIconSize} />} {t('import')}
                 </button>
                 <input type="file" ref={importFileRef} onChange={handleFileImport} accept=".json" className="hidden" />
 
@@ -217,16 +214,9 @@ export const PreloadedMessagesModal: React.FC<PreloadedMessagesModalProps> = ({
   );
 
   return (
-    <div 
-        className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-2 sm:p-4 backdrop-blur-sm" 
-        role="dialog" 
-        aria-modal="true" 
-        aria-labelledby="scenarios-title"
-        onClick={handleClose}
-    >
+    <Modal isOpen={isOpen} onClose={handleClose}>
       <div 
-        className={`bg-[var(--theme-bg-tertiary)] p-3 sm:p-5 md:p-6 rounded-xl shadow-premium w-full max-w-md sm:max-w-2xl flex flex-col max-h-[90vh] ${isOpen ? 'modal-enter-animation' : 'modal-exit-animation'}`}
-        onClick={(e) => e.stopPropagation()}
+        className="bg-[var(--theme-bg-tertiary)] p-3 sm:p-5 md:p-6 rounded-xl shadow-premium w-full max-w-md sm:max-w-2xl flex flex-col max-h-[90vh]"
         style={{ transition: 'all 0.3s' }}
       >
         <div className="flex justify-between items-center mb-3 sm:mb-4">
@@ -255,120 +245,6 @@ export const PreloadedMessagesModal: React.FC<PreloadedMessagesModalProps> = ({
             {view === 'list' ? renderListView() : renderEditorView()}
         </div>
       </div>
-    </div>
+    </Modal>
   );
-};
-
-// --- Sub-component for Editor View ---
-interface ScenarioEditorProps {
-    initialScenario: SavedScenario | null;
-    onSave: (scenario: SavedScenario) => void;
-    onCancel: () => void;
-    t: (key: keyof typeof translations, fallback?: string) => string;
-}
-const ScenarioEditor: React.FC<ScenarioEditorProps> = ({ initialScenario, onSave, onCancel, t }) => {
-    const [scenario, setScenario] = useState<SavedScenario>(initialScenario || { id: Date.now().toString(), title: '', messages: [] });
-    const [editingMessage, setEditingMessage] = useState<PreloadedMessage | null>(null);
-    const [newMessageRole, setNewMessageRole] = useState<'user' | 'model'>('user');
-    const [newMessageContent, setNewMessageContent] = useState('');
-    
-    const actionIconSize = getResponsiveValue(14, 16);
-    const listItemIconSize = getResponsiveValue(12, 14);
-
-    const handleMessageChange = (messages: PreloadedMessage[]) => {
-        setScenario(prev => ({...prev, messages}));
-    }
-
-    const handleAddOrUpdateMessage = () => {
-        if (!newMessageContent.trim()) return;
-        if (editingMessage) {
-            handleMessageChange(scenario.messages.map(msg => msg.id === editingMessage.id ? { ...msg, role: newMessageRole, content: newMessageContent } : msg));
-            setEditingMessage(null);
-        } else {
-            handleMessageChange([...scenario.messages, { id: Date.now().toString(), role: newMessageRole, content: newMessageContent }]);
-        }
-        setNewMessageContent('');
-    };
-
-    const handleEditMessage = (message: PreloadedMessage) => {
-        setEditingMessage(message);
-        setNewMessageRole(message.role);
-        setNewMessageContent(message.content);
-        document.getElementById('new-message-content')?.focus();
-    };
-
-    const handleDeleteMessage = (id: string) => {
-        handleMessageChange(scenario.messages.filter((msg) => msg.id !== id));
-        if (editingMessage?.id === id) {
-            setEditingMessage(null);
-            setNewMessageContent('');
-        }
-    };
-    
-    const moveMessage = (index: number, direction: 'up' | 'down') => {
-        if ((direction === 'up' && index === 0) || (direction === 'down' && index === scenario.messages.length - 1)) return;
-        const newMessages = [...scenario.messages];
-        const item = newMessages.splice(index, 1)[0];
-        newMessages.splice(index + (direction === 'down' ? 1 : -1), 0, item);
-        handleMessageChange(newMessages);
-    };
-
-    return (
-        <>
-        <div className="flex-grow flex flex-col min-h-0">
-             {/* Title Editor */}
-             <div className="mb-4">
-                <label htmlFor="scenario-title" className="block text-xs font-medium text-[var(--theme-text-secondary)] mb-1 block">Scenario Title</label>
-                <input
-                    id="scenario-title"
-                    type="text"
-                    value={scenario.title}
-                    onChange={(e) => setScenario(prev => ({...prev, title: e.target.value}))}
-                    placeholder="Enter a descriptive title..."
-                    className="w-full p-2 bg-[var(--theme-bg-input)] border border-[var(--theme-border-secondary)] rounded-md focus:ring-1 focus:ring-[var(--theme-border-focus)] text-[var(--theme-text-primary)] placeholder-[var(--theme-text-tertiary)] text-sm"
-                />
-            </div>
-
-            {/* Message Editor/Adder */}
-            <div className="mb-4 p-3 border border-[var(--theme-border-secondary)] rounded-lg bg-[var(--theme-bg-secondary)] shadow-inner">
-                <h3 className="text-xs font-medium text-[var(--theme-text-secondary)] mb-2">{editingMessage ? t('scenarios_editor_edit_title') : t('scenarios_editor_add_title')}</h3>
-                <div className="flex items-center gap-2 mb-2">
-                    <select value={newMessageRole} onChange={(e) => setNewMessageRole(e.target.value as 'user' | 'model')} className="bg-[var(--theme-bg-input)] border border-[var(--theme-border-secondary)] text-[var(--theme-text-primary)] text-xs rounded-md focus:ring-1 focus:ring-[var(--theme-border-focus)] p-1.5 w-auto">
-                        <option value="user">{t('scenarios_editor_role_user')}</option>
-                        <option value="model">{t('scenarios_editor_role_model')}</option>
-                    </select>
-                    <textarea id="new-message-content" value={newMessageContent} onChange={(e) => setNewMessageContent(e.target.value)} rows={2} className="flex-grow p-1.5 bg-[var(--theme-bg-input)] border border-[var(--theme-border-secondary)] rounded-md focus:ring-1 focus:ring-[var(--theme-border-focus)] text-[var(--theme-text-primary)] placeholder-[var(--theme-text-tertiary)] text-xs resize-y" placeholder={t('scenarios_editor_content_placeholder')} />
-                </div>
-                <div className="flex justify-end gap-2">
-                    {editingMessage && <button onClick={() => { setEditingMessage(null); setNewMessageContent(''); }} className="px-2 py-1 text-xs bg-[var(--theme-bg-input)] hover:bg-[var(--theme-border-primary)] text-[var(--theme-text-secondary)] rounded-md transition-colors">{t('scenarios_editor_cancel_button')}</button>}
-                    <button onClick={handleAddOrUpdateMessage} className="px-2 py-1 text-xs bg-[var(--theme-bg-accent)] hover:bg-[var(--theme-bg-accent-hover)] text-[var(--theme-text-accent)] rounded-md transition-colors flex items-center"><PlusCircle size={listItemIconSize} className="mr-1" /> {editingMessage ? t('scenarios_editor_update_button') : t('scenarios_editor_add_button')}</button>
-                </div>
-            </div>
-
-            {/* Messages List */}
-            <div className="flex-grow overflow-y-auto custom-scrollbar pr-0.5 -mr-0.5">
-                {scenario.messages.length === 0 ? <p className="text-xs text-[var(--theme-text-tertiary)] text-center py-4">{t('scenarios_empty_list')}</p> :
-                    <ul className="space-y-1.5">
-                        {scenario.messages.map((msg, index) => (
-                            <li key={msg.id} className="p-2 bg-[var(--theme-bg-input)] rounded-md border border-[var(--theme-border-secondary)] flex items-start gap-2 text-xs">
-                                <div className={`p-1 rounded-full ${msg.role === 'user' ? 'bg-[var(--theme-icon-user)]' : 'bg-[var(--theme-icon-model)]'} text-white mt-0.5`}><div className="w-3 h-3">{msg.role === 'user' ? <User size={listItemIconSize} /> : <Bot size={listItemIconSize} />}</div></div>
-                                <p className="flex-grow min-w-0 text-[var(--theme-text-primary)] whitespace-pre-wrap break-words">{msg.content}</p>
-                                <div className="flex-shrink-0 flex items-center gap-1 ml-1">
-                                    <button onClick={() => moveMessage(index, 'up')} disabled={index === 0} className="p-1 text-[var(--theme-text-tertiary)] hover:text-[var(--theme-text-secondary)] disabled:opacity-30"><FileUp size={actionIconSize-2} /></button>
-                                    <button onClick={() => moveMessage(index, 'down')} disabled={index === scenario.messages.length - 1} className="p-1 text-[var(--theme-text-tertiary)] hover:text-[var(--theme-text-secondary)] disabled:opacity-30"><FileDown size={actionIconSize-2} /></button>
-                                    <button onClick={() => handleEditMessage(msg)} className="p-1 text-[var(--theme-text-tertiary)] hover:text-[var(--theme-text-link)]"><Edit3 size={actionIconSize-2} /></button>
-                                    <button onClick={() => handleDeleteMessage(msg.id)} className="p-1 text-[var(--theme-text-tertiary)] hover:text-[var(--theme-text-danger)]"><Trash2 size={actionIconSize-2} /></button>
-                                </div>
-                            </li>
-                        ))}
-                    </ul>
-                }
-            </div>
-        </div>
-        <div className="mt-auto pt-4 border-t border-[var(--theme-border-primary)] flex justify-end gap-3">
-             <button onClick={onCancel} className="px-4 py-2 text-sm bg-[var(--theme-bg-secondary)] hover:bg-[var(--theme-border-primary)] text-[var(--theme-text-primary)] rounded-md transition-colors">Cancel</button>
-             <button onClick={() => onSave(scenario)} disabled={!scenario.title.trim()} className="px-4 py-2 text-sm bg-[var(--theme-bg-accent)] hover:bg-[var(--theme-bg-accent-hover)] text-[var(--theme-text-accent)] rounded-md transition-colors disabled:opacity-50">Save Scenario</button>
-        </div>
-        </>
-    );
 };
