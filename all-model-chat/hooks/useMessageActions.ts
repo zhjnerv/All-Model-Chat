@@ -19,6 +19,7 @@ interface MessageActionsProps {
     updateAndPersistSessions: SessionsUpdater;
     userScrolledUp: React.MutableRefObject<boolean>;
     handleSendMessage: SendMessageFunc;
+    setLoadingSessionIds: Dispatch<SetStateAction<Set<string>>>;
 }
 
 export const useMessageActions = ({
@@ -33,20 +34,44 @@ export const useMessageActions = ({
     setAppFileError,
     updateAndPersistSessions,
     userScrolledUp,
-    handleSendMessage
+    handleSendMessage,
+    setLoadingSessionIds,
 }: MessageActionsProps) => {
 
-    const handleStopGenerating = useCallback(() => {
+    const handleStopGenerating = useCallback((options: { silent?: boolean } = {}) => {
+        const { silent = false } = options;
         if (!activeSessionId || !isLoading) return;
 
-        // Find the specific generation ID for the loading message in the active session
         const loadingMessage = messages.find(msg => msg.isLoading);
         if (loadingMessage) {
             const generationId = loadingMessage.id;
             const controller = activeJobs.current.get(generationId);
+            
             if (controller) {
-                logService.warn(`User stopped generation for session ${activeSessionId}, job ${generationId}`);
+                logService.warn(`User stopped generation for session ${activeSessionId}, job ${generationId}. Silent: ${silent}`);
                 controller.abort();
+                
+                if (!silent) {
+                    updateAndPersistSessions(prev => prev.map(s => {
+                        if (s.id !== activeSessionId) return s;
+                        return {
+                            ...s,
+                            messages: s.messages.map(msg =>
+                                msg.id === generationId
+                                    ? { ...msg, isLoading: false, content: (msg.content || "") + "\n\n[Stopped by user]", generationEndTime: new Date() }
+                                    : msg
+                            )
+                        };
+                    }));
+                }
+                
+                setLoadingSessionIds(prev => {
+                    const next = new Set(prev);
+                    next.delete(activeSessionId);
+                    return next;
+                });
+
+                activeJobs.current.delete(generationId);
             } else {
                  logService.error(`Could not find active job to stop for generationId: ${generationId}. Aborting all as a fallback.`);
                  activeJobs.current.forEach(c => c.abort());
@@ -54,8 +79,13 @@ export const useMessageActions = ({
         } else {
             logService.warn(`handleStopGenerating called for session ${activeSessionId}, but no loading message was found. Aborting all as a fallback.`);
             activeJobs.current.forEach(c => c.abort());
+            setLoadingSessionIds(prev => {
+                const next = new Set(prev);
+                next.delete(activeSessionId);
+                return next;
+            });
         }
-    }, [activeSessionId, isLoading, messages, activeJobs]);
+    }, [activeSessionId, isLoading, messages, activeJobs, updateAndPersistSessions, setLoadingSessionIds]);
 
     const handleCancelEdit = useCallback(() => { 
         logService.info("User cancelled message edit.");
@@ -106,10 +136,10 @@ export const useMessageActions = ({
         const userMessageToResend = messages[modelMessageIndex - 1];
         if (userMessageToResend.role !== 'user') return;
 
-        if (isLoading) handleStopGenerating();
+        if (isLoading) {
+            handleStopGenerating({ silent: true });
+        }
         
-        // When retrying, we're effectively editing the user message that came before the failed model response.
-        // This will slice the history correctly and resubmit.
         await handleSendMessage({
             text: userMessageToResend.content,
             files: userMessageToResend.files,

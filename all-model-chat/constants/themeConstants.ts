@@ -74,7 +74,7 @@ export const ONYX_THEME_COLORS: ThemeColors = {
   bgInput: '#40414F',
   bgCodeBlock: '#202123',
   bgCodeBlockHeader: 'rgba(64, 65, 79, 0.7)',
-  bgUserMessage: '#444654',
+  bgUserMessage: '#10a37f',
   bgModelMessage: '#2b2b31',
   bgErrorMessage: 'rgba(218, 54, 51, 0.2)',
   bgSuccess: 'rgba(74, 222, 128, 0.15)',
@@ -146,7 +146,7 @@ export const PEARL_THEME_COLORS: ThemeColors = {
   textSecondary: '#565869',
   textTertiary: '#8E8E8E',
   textAccent: '#FFFFFF',
-  textDanger: '#FFFFFF',
+  textDanger: '#DF3434',
   textLink: '#565869',
   textCode: '#40414f',
   bgUserMessageText: '#202123',
@@ -177,7 +177,7 @@ export const PEARL_THEME_COLORS: ThemeColors = {
 };
 
 export const AVAILABLE_THEMES: Theme[] = [
-  { id: 'onyx', name: 'Onyx (Default Dark)', colors: ONYX_THEME_COLORS },
+  { id: 'onyx', name: 'Onyx (Dark)', colors: ONYX_THEME_COLORS },
   { id: 'pearl', name: 'Pearl (Light)', colors: PEARL_THEME_COLORS },
 ];
 

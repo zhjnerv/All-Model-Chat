@@ -89,6 +89,9 @@ export const useChatHistory = ({
             setCommandedInput({ text: '', id: Date.now() });
             setSelectedFiles([]);
             setEditingMessageId(null);
+            setTimeout(() => {
+                document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Chat message input"]')?.focus();
+            }, 0);
         } else {
             logService.warn(`Session ${sessionId} not found. Starting new chat.`);
             startNewChat();
@@ -159,22 +162,8 @@ export const useChatHistory = ({
              }
              return prev.filter(s => s.id !== sessionId);
         });
-        setActiveSessionId(prevActiveId => {
-            if (prevActiveId === sessionId) {
-                const sessionsAfterDelete = JSON.parse(localStorage.getItem(CHAT_HISTORY_SESSIONS_KEY) || '[]') as SavedChatSession[];
-                sessionsAfterDelete.sort((a,b) => b.timestamp - a.timestamp);
-                const nextSessionToLoad = sessionsAfterDelete[0];
-                if (nextSessionToLoad) {
-                     loadChatSession(nextSessionToLoad.id, sessionsAfterDelete);
-                     return nextSessionToLoad.id;
-                } else {
-                    startNewChat();
-                    return null;
-                }
-            }
-            return prevActiveId;
-        });
-    }, [updateAndPersistSessions, activeJobs, setActiveSessionId, loadChatSession, startNewChat]);
+        // The logic to switch to a new active session is now handled declaratively in useChat.ts's useEffect.
+    }, [updateAndPersistSessions, activeJobs]);
     
     const handleRenameSession = useCallback((sessionId: string, newTitle: string) => {
         if (!newTitle.trim()) return;
@@ -229,16 +218,19 @@ export const useChatHistory = ({
         activeJobs.current.clear();
         localStorage.removeItem(CHAT_HISTORY_SESSIONS_KEY);
         localStorage.removeItem(CHAT_HISTORY_GROUPS_KEY);
+        localStorage.removeItem(ACTIVE_CHAT_SESSION_ID_KEY);
         setSavedSessions([]);
         setSavedGroups([]);
         startNewChat();
     }, [setSavedSessions, setSavedGroups, startNewChat, activeJobs]);
     
     const clearCacheAndReload = useCallback(() => {
-        clearAllHistory();
+        logService.warn('User clearing all application cache and settings.');
+        activeJobs.current.forEach(controller => controller.abort());
+        activeJobs.current.clear();
         localStorage.clear();
         setTimeout(() => window.location.reload(), 50);
-    }, [clearAllHistory]);
+    }, [activeJobs]);
 
     return {
         loadInitialData,

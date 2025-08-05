@@ -21,6 +21,12 @@ interface FeatureFlagsProps {
   setIsGraphvizRenderingEnabled: (value: boolean) => void;
   isCompletionNotificationEnabled: boolean;
   setIsCompletionNotificationEnabled: (value: boolean) => void;
+  isSuggestionsEnabled: boolean;
+  setIsSuggestionsEnabled: (value: boolean) => void;
+  isAutoSendOnSuggestionClick: boolean;
+  setIsAutoSendOnSuggestionClick: (value: boolean) => void;
+  isAutoScrollOnSendEnabled: boolean;
+  setIsAutoScrollOnSendEnabled: (value: boolean) => void;
   t: (key: string) => string;
 }
 
@@ -55,7 +61,9 @@ export const FeatureFlags: React.FC<FeatureFlagsProps> = ({
   isStreamingEnabled, setIsStreamingEnabled, useFilesApiForImages, setUseFilesApiForImages,
   expandCodeBlocksByDefault, setExpandCodeBlocksByDefault, isAutoTitleEnabled, setIsAutoTitleEnabled,
   isMermaidRenderingEnabled, setIsMermaidRenderingEnabled, isGraphvizRenderingEnabled, setIsGraphvizRenderingEnabled,
-  isCompletionNotificationEnabled, setIsCompletionNotificationEnabled, t
+  isCompletionNotificationEnabled, setIsCompletionNotificationEnabled, isSuggestionsEnabled, setIsSuggestionsEnabled,
+  isAutoSendOnSuggestionClick, setIsAutoSendOnSuggestionClick,
+  isAutoScrollOnSendEnabled, setIsAutoScrollOnSendEnabled, t
 }) => {
   const inputBaseClasses = "w-full p-2 border rounded-md focus:ring-2 focus:border-[var(--theme-border-focus)] text-[var(--theme-text-primary)] placeholder-[var(--theme-text-tertiary)] text-sm";
   const enabledInputClasses = "bg-[var(--theme-bg-input)] border-[var(--theme-border-secondary)] focus:ring-[var(--theme-border-focus)]";
@@ -155,12 +163,19 @@ export const FeatureFlags: React.FC<FeatureFlagsProps> = ({
       </div>
       
       <Toggle id="streaming-toggle" labelKey="headerStream" checked={isStreamingEnabled} onChange={setIsStreamingEnabled} t={t} />
+      <Toggle id="auto-scroll-toggle" labelKey="settings_autoScrollOnSend_label" checked={isAutoScrollOnSendEnabled} onChange={setIsAutoScrollOnSendEnabled} t={t} />
       <Toggle id="auto-title-toggle" labelKey="isAutoTitleEnabled" tooltipKey="isAutoTitleEnabled_tooltip" checked={isAutoTitleEnabled} onChange={setIsAutoTitleEnabled} t={t} />
       <Toggle id="use-files-api-for-images-toggle" labelKey="settings_useFilesApiForImages_label" tooltipKey="settings_useFilesApiForImages_tooltip" checked={useFilesApiForImages} onChange={setUseFilesApiForImages} t={t} />
       <Toggle id="expand-code-blocks-toggle" labelKey="settings_expandCodeBlocksByDefault_label" checked={expandCodeBlocksByDefault} onChange={setExpandCodeBlocksByDefault} t={t} />
       <Toggle id="mermaid-rendering-toggle" labelKey="settings_enableMermaidRendering_label" tooltipKey="settings_enableMermaidRendering_tooltip" checked={isMermaidRenderingEnabled} onChange={setIsMermaidRenderingEnabled} t={t} />
       <Toggle id="graphviz-rendering-toggle" labelKey="settings_enableGraphvizRendering_label" tooltipKey="settings_enableGraphvizRendering_tooltip" checked={isGraphvizRenderingEnabled} onChange={setIsGraphvizRenderingEnabled} t={t} />
-      <Toggle id="completion-notification-toggle" labelKey="settings_enableCompletionNotification_label" tooltipKey="settings_enableCompletionNotification_tooltip" checked={isCompletionNotificationEnabled ?? false} onChange={setIsCompletionNotificationEnabled} t={t} />
+      <Toggle id="completion-notification-toggle" labelKey="settings_enableCompletionNotification_label" tooltipKey="settings_enableCompletionNotification_tooltip" checked={isCompletionNotificationEnabled} onChange={setIsCompletionNotificationEnabled} t={t} />
+      <Toggle id="suggestions-toggle" labelKey="settings_enableSuggestions_label" tooltipKey="settings_enableSuggestions_tooltip" checked={isSuggestionsEnabled} onChange={setIsSuggestionsEnabled} t={t} />
+      {isSuggestionsEnabled && (
+        <div style={{ animation: 'fadeIn 0.3s ease-out both' }}>
+          <Toggle id="auto-send-suggestions-toggle" labelKey="settings_autoSendOnSuggestionClick_label" tooltipKey="settings_autoSendOnSuggestionClick_tooltip" checked={isAutoSendOnSuggestionClick} onChange={setIsAutoSendOnSuggestionClick} t={t} />
+        </div>
+      )}
     </div>
   );
 };

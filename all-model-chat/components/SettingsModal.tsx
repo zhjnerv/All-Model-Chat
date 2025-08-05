@@ -131,7 +131,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   <DataManagementSection
                     onClearHistory={() => { onClearAllHistory(); onClose(); }}
                     onClearCache={onClearCache}
-                    onOpenLogViewer={onOpenLogViewer}
+                    onOpenLogViewer={() => { onOpenLogViewer(); onClose(); }}
                     onInstallPwa={onInstallPwa}
                     isInstallable={isInstallable}
                     onImportSettings={onImportSettings}
@@ -186,8 +186,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   setIsMermaidRenderingEnabled={(val) => updateSetting('isMermaidRenderingEnabled', val)}
                   isGraphvizRenderingEnabled={settings.isGraphvizRenderingEnabled ?? true}
                   setIsGraphvizRenderingEnabled={(val) => updateSetting('isGraphvizRenderingEnabled', val)}
-                  isCompletionNotificationEnabled={settings.isCompletionNotificationEnabled ?? false}
+                  isCompletionNotificationEnabled={settings.isCompletionNotificationEnabled}
                   setIsCompletionNotificationEnabled={(val) => updateSetting('isCompletionNotificationEnabled', val)}
+                  isSuggestionsEnabled={settings.isSuggestionsEnabled}
+                  setIsSuggestionsEnabled={(val) => updateSetting('isSuggestionsEnabled', val)}
+                  isAutoSendOnSuggestionClick={settings.isAutoSendOnSuggestionClick ?? true}
+                  setIsAutoSendOnSuggestionClick={(val) => updateSetting('isAutoSendOnSuggestionClick', val)}
+                  isAutoScrollOnSendEnabled={settings.isAutoScrollOnSendEnabled}
+                  setIsAutoScrollOnSendEnabled={(val) => updateSetting('isAutoScrollOnSendEnabled', val)}
                   t={t}
                 />
               )}

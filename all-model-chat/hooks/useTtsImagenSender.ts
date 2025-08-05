@@ -1,4 +1,3 @@
-// hooks/useTtsImagenSender.ts
 import { Dispatch, SetStateAction, useCallback } from 'react';
 import { AppSettings, ChatMessage, SavedChatSession, UploadedFile, ChatSettings as IndividualChatSettings } from '../types';
 import { useApiErrorHandler } from './useApiErrorHandler';
@@ -39,7 +38,11 @@ export const useTtsImagenSender = ({
         updateAndPersistSessions(prev => prev.map(s => {
             if (s.id !== currentSessionId) return s;
             const newMessages = [...s.messages, userMessage, modelMessage];
-            return { ...s, messages: newMessages, title: generateSessionTitle(newMessages) };
+            let newTitle = s.title;
+            if (s.title === 'New Chat' && !appSettings.isAutoTitleEnabled) {
+                newTitle = generateSessionTitle(newMessages);
+            }
+            return { ...s, messages: newMessages, title: newTitle };
         }));
 
         try {

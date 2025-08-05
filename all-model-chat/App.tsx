@@ -1,4 +1,5 @@
 import React, { useEffect, useCallback, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { AppSettings } from './types';
 import { CANVAS_ASSISTANT_SYSTEM_PROMPT, DEFAULT_SYSTEM_INSTRUCTION } from './constants/appConstants';
 import { HistorySidebar } from './components/HistorySidebar';
@@ -6,12 +7,14 @@ import { useAppSettings } from './hooks/useAppSettings';
 import { useChat } from './hooks/useChat';
 import { useAppUI } from './hooks/useAppUI';
 import { useAppEvents } from './hooks/useAppEvents';
+import { usePictureInPicture } from './hooks/usePictureInPicture';
 import { getTranslator, logService } from './utils/appUtils';
 import mermaid from 'mermaid';
 import { ChatArea } from './components/layout/ChatArea';
 import { AppModals } from './components/modals/AppModals';
 import { sanitizeFilename, exportElementAsPng, exportHtmlStringAsFile, exportTextStringAsFile, gatherPageStyles } from './utils/exportUtils';
 import DOMPurify from 'dompurify';
+import { PictureInPicture2 } from 'lucide-react';
 
 
 const App: React.FC = () => {
@@ -69,6 +72,7 @@ const App: React.FC = () => {
       handleMoveSessionToGroup,
       handleToggleGroupExpansion,
       clearCacheAndReload,
+      clearAllHistory,
       handleSaveAllScenarios,
       handleLoadPreloadedScenario,
       handleImportPreloadedScenario,
@@ -105,6 +109,8 @@ const App: React.FC = () => {
     handleTouchEnd,
   } = useAppUI();
   
+  const { isPipSupported, isPipActive, togglePip, pipContainer } = usePictureInPicture();
+
   const {
     installPromptEvent,
     isStandalone,
@@ -124,6 +130,8 @@ const App: React.FC = () => {
     isPreloadedMessagesModalOpen,
     setIsLogViewerOpen,
     updateAndPersistSessions,
+    onTogglePip: togglePip,
+    isPipSupported,
   });
 
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
@@ -180,12 +188,24 @@ const App: React.FC = () => {
     }
   };
   
-  const handleSuggestionClick = (text: string) => {
+  const handleHomepageSuggestionClick = (text: string) => {
     setCommandedInput({ text: text + '\n', id: Date.now() });
     setTimeout(() => {
         const textarea = document.querySelector('textarea[aria-label="Chat message input"]') as HTMLTextAreaElement;
         if (textarea) textarea.focus();
     }, 0);
+  };
+
+  const handleFollowUpSuggestionClick = (text: string) => {
+    if (appSettings.isAutoSendOnSuggestionClick ?? true) {
+      handleSendMessage({ text });
+    } else {
+      setCommandedInput({ text: text + '\n', id: Date.now() });
+      setTimeout(() => {
+          const textarea = document.querySelector('textarea[aria-label="Chat message input"]') as HTMLTextAreaElement;
+          if (textarea) textarea.focus();
+      }, 0);
+    }
   };
 
   const getCurrentModelDisplayName = () => {
@@ -209,23 +229,29 @@ const App: React.FC = () => {
     const date = new Date().toISOString().slice(0, 10);
     const filename = `chat-${safeTitle}-${date}.${format}`;
 
+    const scrollContainer = scrollContainerRef.current;
+    let originalPaddingBottom: string | null = null;
+
     try {
         if (format === 'png') {
-            if (!scrollContainerRef.current) return;
+            if (!scrollContainer) return;
             document.body.classList.add('is-exporting-png');
+            originalPaddingBottom = scrollContainer.style.paddingBottom;
+            scrollContainer.style.paddingBottom = '16px'; // Use a small fixed padding for export
             await new Promise(resolve => setTimeout(resolve, 100)); // Allow styles to apply
             
-            await exportElementAsPng(scrollContainerRef.current, filename, {
-                backgroundColor: currentTheme.colors.bgSecondary,
+            const exportBgColor = currentTheme.id === 'pearl' ? currentTheme.colors.bgPrimary : currentTheme.colors.bgSecondary;
+            await exportElementAsPng(scrollContainer, filename, {
+                backgroundColor: exportBgColor,
             });
 
         } else if (format === 'html') {
-            if (!scrollContainerRef.current) return;
+            if (!scrollContainer) return;
 
             const headContent = await gatherPageStyles();
             const bodyClasses = document.body.className;
             const rootBgColor = getComputedStyle(document.documentElement).getPropertyValue('--theme-bg-primary');
-            const chatHtml = scrollContainerRef.current.innerHTML;
+            const chatHtml = scrollContainer.innerHTML;
 
             const fullHtml = `
                 <!DOCTYPE html>
@@ -246,8 +272,7 @@ const App: React.FC = () => {
                     </script>
                     <style>
                         body { background-color: ${rootBgColor}; padding: 1rem; box-sizing: border-box; }
-                        .message-actions { opacity: 0.5 !important; transform: none !important; }
-                        .group:hover .message-actions { opacity: 1 !important; }
+                        .message-actions, .code-block-utility-button { display: none !important; }
                         .sticky[aria-label="Scroll to bottom"] { display: none !important; }
                     </style>
                 </head>
@@ -279,6 +304,9 @@ const App: React.FC = () => {
         alert(`Export failed: ${error instanceof Error ? error.message : String(error)}`);
     } finally {
         document.body.classList.remove('is-exporting-png');
+        if (scrollContainer && originalPaddingBottom !== null) {
+            scrollContainer.style.paddingBottom = originalPaddingBottom;
+        }
         setExportStatus('idle');
         setIsExportModalOpen(false);
     }
@@ -287,44 +315,8 @@ const App: React.FC = () => {
   const isCanvasPromptActive = currentChatSettings.systemInstruction === CANVAS_ASSISTANT_SYSTEM_PROMPT;
   const isImagenModel = currentChatSettings.modelId?.includes('imagen');
 
-  return (
-    <div 
-      className={`relative flex h-full bg-[var(--theme-bg-secondary)] text-[var(--theme-text-primary)] theme-${currentTheme.id}`}
-      onTouchStart={handleTouchStart}
-      onTouchEnd={handleTouchEnd}
-    >
-      {isHistorySidebarOpen && (
-        <div 
-          onClick={() => setIsHistorySidebarOpen(false)} 
-          className="fixed sm:hidden inset-0 bg-black/60 z-20 transition-opacity duration-300"
-          aria-hidden="true"
-        />
-      )}
-      <HistorySidebar
-        isOpen={isHistorySidebarOpen}
-        onToggle={() => setIsHistorySidebarOpen(prev => !prev)}
-        sessions={savedSessions}
-        groups={savedGroups}
-        activeSessionId={activeSessionId}
-        loadingSessionIds={loadingSessionIds}
-        generatingTitleSessionIds={generatingTitleSessionIds}
-        onSelectSession={(id) => loadChatSession(id, savedSessions)}
-        onNewChat={() => startNewChat()}
-        onDeleteSession={handleDeleteChatHistorySession}
-        onRenameSession={handleRenameSession}
-        onTogglePinSession={handleTogglePinSession}
-        onOpenExportModal={() => setIsExportModalOpen(true)}
-        onAddNewGroup={handleAddNewGroup}
-        onDeleteGroup={handleDeleteGroup}
-        onRenameGroup={handleRenameGroup}
-        onMoveSessionToGroup={handleMoveSessionToGroup}
-        onToggleGroupExpansion={handleToggleGroupExpansion}
-        themeColors={currentTheme.colors}
-        t={t}
-        themeId={currentTheme.id}
-        language={language}
-      />
-      <ChatArea
+  const chatAreaComponent = (
+    <ChatArea
         isAppDraggingOver={isAppDraggingOver}
         handleAppDragEnter={handleAppDragEnter}
         handleAppDragOver={handleAppDragOver}
@@ -362,7 +354,8 @@ const App: React.FC = () => {
         expandCodeBlocksByDefault={appSettings.expandCodeBlocksByDefault}
         isMermaidRenderingEnabled={appSettings.isMermaidRenderingEnabled}
         isGraphvizRenderingEnabled={appSettings.isGraphvizRenderingEnabled ?? true}
-        onSuggestionClick={handleSuggestionClick}
+        onSuggestionClick={handleHomepageSuggestionClick}
+        onFollowUpSuggestionClick={handleFollowUpSuggestionClick}
         onTextToSpeech={handleTextToSpeech}
         ttsMessageId={ttsMessageId}
         language={language}
@@ -371,6 +364,7 @@ const App: React.FC = () => {
         onScrollToNextTurn={scrollToNextTurn}
         appSettings={appSettings}
         commandedInput={commandedInput}
+        setCommandedInput={setCommandedInput}
         onMessageSent={() => setCommandedInput(null)}
         selectedFiles={selectedFiles}
         setSelectedFiles={setSelectedFiles}
@@ -399,8 +393,49 @@ const App: React.FC = () => {
         onTogglePinCurrentSession={handleTogglePinCurrentSession}
         onRetryLastTurn={handleRetryLastTurn}
         onEditLastUserMessage={handleEditLastUserMessage}
+        onOpenLogViewer={() => setIsLogViewerOpen(true)}
+        onClearAllHistory={clearAllHistory}
+        isPipSupported={isPipSupported}
+        isPipActive={isPipActive}
+        onTogglePip={togglePip}
         t={t}
       />
+  );
+  
+  const fullAppComponent = (
+    <>
+      {isHistorySidebarOpen && (
+        <div 
+          onClick={() => setIsHistorySidebarOpen(false)} 
+          className="fixed sm:hidden inset-0 bg-black/60 z-20 transition-opacity duration-300"
+          aria-hidden="true"
+        />
+      )}
+      <HistorySidebar
+        isOpen={isHistorySidebarOpen}
+        onToggle={() => setIsHistorySidebarOpen(prev => !prev)}
+        sessions={savedSessions}
+        groups={savedGroups}
+        activeSessionId={activeSessionId}
+        loadingSessionIds={loadingSessionIds}
+        generatingTitleSessionIds={generatingTitleSessionIds}
+        onSelectSession={(id) => loadChatSession(id, savedSessions)}
+        onNewChat={() => startNewChat()}
+        onDeleteSession={handleDeleteChatHistorySession}
+        onRenameSession={handleRenameSession}
+        onTogglePinSession={handleTogglePinSession}
+        onOpenExportModal={() => setIsExportModalOpen(true)}
+        onAddNewGroup={handleAddNewGroup}
+        onDeleteGroup={handleDeleteGroup}
+        onRenameGroup={handleRenameGroup}
+        onMoveSessionToGroup={handleMoveSessionToGroup}
+        onToggleGroupExpansion={handleToggleGroupExpansion}
+        themeColors={currentTheme.colors}
+        t={t}
+        themeId={currentTheme.id}
+        language={language}
+      />
+      {chatAreaComponent}
       <AppModals
         isSettingsModalOpen={isSettingsModalOpen}
         setIsSettingsModalOpen={setIsSettingsModalOpen}
@@ -410,6 +445,7 @@ const App: React.FC = () => {
         isModelsLoading={isModelsLoading}
         modelsLoadingError={modelsLoadingError}
         clearCacheAndReload={clearCacheAndReload}
+        clearAllHistory={clearAllHistory}
         handleInstallPwa={handleInstallPwa}
         installPromptEvent={installPromptEvent}
         isStandalone={isStandalone}
@@ -431,6 +467,42 @@ const App: React.FC = () => {
         currentChatSettings={currentChatSettings}
         t={t}
       />
+    </>
+  );
+
+  return (
+    <div 
+      className={`relative flex h-full bg-[var(--theme-bg-secondary)] text-[var(--theme-text-primary)] theme-${currentTheme.id}`}
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
+    >
+      {isPipActive && pipContainer ? (
+          <>
+              {createPortal(
+                  <div 
+                    className={`theme-${currentTheme.id} h-full w-full flex relative bg-[var(--theme-bg-secondary)] text-[var(--theme-text-primary)]`}
+                    onTouchStart={handleTouchStart}
+                    onTouchEnd={handleTouchEnd}
+                  >
+                      {fullAppComponent}
+                  </div>,
+                  pipContainer
+              )}
+              <div className="flex-grow flex flex-col items-center justify-center text-center p-4 bg-[var(--theme-bg-secondary)]">
+                  <PictureInPicture2 size={48} className="text-[var(--theme-text-link)] mb-4" />
+                  <h2 className="text-xl font-semibold text-[var(--theme-text-primary)]">Chat in Picture-in-Picture</h2>
+                  <p className="text-sm text-[var(--theme-text-secondary)] mt-2 max-w-xs">The chat is running in a separate window. Close it to bring the conversation back here.</p>
+                  <button 
+                      onClick={togglePip} 
+                      className="mt-6 px-4 py-2 bg-[var(--theme-bg-accent)] text-[var(--theme-text-accent)] rounded-lg font-medium hover:bg-[var(--theme-bg-accent-hover)] transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-[var(--theme-bg-secondary)] focus:ring-[var(--theme-border-focus)]"
+                  >
+                      Close PiP Window
+                  </button>
+              </div>
+          </>
+      ) : (
+          fullAppComponent
+      )}
     </div>
   );
 };

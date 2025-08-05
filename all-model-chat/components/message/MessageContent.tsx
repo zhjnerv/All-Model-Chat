@@ -1,26 +1,11 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import remarkMath from 'remark-math';
-import rehypeKatex from 'rehype-katex';
-import rehypeHighlight from 'rehype-highlight';
-import { marked } from 'marked';
-import DOMPurify from 'dompurify';
 import { Loader2, ChevronDown, Sigma, Zap } from 'lucide-react';
 
 import { ChatMessage, UploadedFile } from '../../types';
 import { FileDisplay } from './FileDisplay';
-import { CodeBlock } from './CodeBlock';
 import { translations } from '../../utils/appUtils';
 import { GroundedResponse } from './GroundedResponse';
-import { MermaidBlock } from './MermaidBlock';
-import { GraphvizBlock } from './GraphvizBlock';
-
-const renderThoughtsMarkdown = (content: string) => {
-  const rawMarkup = marked.parse(content || ''); 
-  const cleanMarkup = DOMPurify.sanitize(rawMarkup as string);
-  return { __html: cleanMarkup };
-};
+import { MarkdownRenderer } from '../shared/MarkdownRenderer';
 
 const MessageTimer: React.FC<{ startTime?: Date; endTime?: Date; isLoading?: boolean }> = ({ startTime, endTime, isLoading }) => {
   const [elapsedTime, setElapsedTime] = useState<string>('');
@@ -87,19 +72,15 @@ interface MessageContentProps {
     expandCodeBlocksByDefault: boolean;
     isMermaidRenderingEnabled: boolean;
     isGraphvizRenderingEnabled: boolean;
+    onSuggestionClick?: (suggestion: string) => void;
     t: (key: keyof typeof translations) => string;
 }
 
-export const MessageContent: React.FC<MessageContentProps> = React.memo(({ message, onImageClick, onOpenHtmlPreview, showThoughts, baseFontSize, expandCodeBlocksByDefault, isMermaidRenderingEnabled, isGraphvizRenderingEnabled, t }) => {
-    const { content, files, isLoading, thoughts, generationStartTime, generationEndTime, audioSrc, groundingMetadata } = message;
+export const MessageContent: React.FC<MessageContentProps> = React.memo(({ message, onImageClick, onOpenHtmlPreview, showThoughts, baseFontSize, expandCodeBlocksByDefault, isMermaidRenderingEnabled, isGraphvizRenderingEnabled, onSuggestionClick, t }) => {
+    const { content, files, isLoading, thoughts, generationStartTime, generationEndTime, audioSrc, groundingMetadata, suggestions, isGeneratingSuggestions } = message;
     
     const showPrimaryThinkingIndicator = isLoading && !content && !audioSrc && (!showThoughts || !thoughts);
     const areThoughtsVisible = message.role === 'model' && thoughts && showThoughts;
-
-    const codeBlockCounter = useRef(0);
-    useEffect(() => {
-      codeBlockCounter.current = 0; // Reset on each render of message content
-    });
 
     const lastThought = useMemo(() => {
         if (!thoughts) return null;
@@ -136,54 +117,6 @@ export const MessageContent: React.FC<MessageContentProps> = React.memo(({ messa
 
         return { title: lastHeading, content };
     }, [thoughts]);
-
-    const components = useMemo(() => ({
-      pre: (props: any) => {
-        const { node, children, ...rest } = props;
-        const codeElement = React.Children.toArray(children).find(
-          (child: any) => child.type === 'code'
-        ) as React.ReactElement | undefined;
-
-        const codeClassName = codeElement?.props?.className || '';
-        const codeContent = codeElement?.props?.children;
-        const langMatch = codeClassName.match(/language-(\S+)/);
-        const language = langMatch ? langMatch[1] : '';
-        const isGraphviz = language === 'graphviz' || language === 'dot';
-
-        if (isMermaidRenderingEnabled && language === 'mermaid' && typeof codeContent === 'string') {
-          return (
-            <div>
-              <MermaidBlock code={codeContent} onImageClick={onImageClick} />
-              <CodeBlock {...rest} className={codeClassName} onOpenHtmlPreview={onOpenHtmlPreview} expandCodeBlocksByDefault={expandCodeBlocksByDefault}>
-                {children}
-              </CodeBlock>
-            </div>
-          );
-        }
-
-        if (isGraphvizRenderingEnabled && isGraphviz && typeof codeContent === 'string') {
-          return (
-            <div>
-              <GraphvizBlock code={codeContent} />
-              <CodeBlock {...rest} className={codeClassName} onOpenHtmlPreview={onOpenHtmlPreview} expandCodeBlocksByDefault={expandCodeBlocksByDefault}>
-                {children}
-              </CodeBlock>
-            </div>
-          );
-        }
-        
-        return (
-          <CodeBlock 
-            {...rest} 
-            className={codeClassName} 
-            onOpenHtmlPreview={onOpenHtmlPreview} 
-            expandCodeBlocksByDefault={expandCodeBlocksByDefault}
-          >
-            {children}
-          </CodeBlock>
-        );
-      }
-    }), [onOpenHtmlPreview, expandCodeBlocksByDefault, onImageClick, isMermaidRenderingEnabled, isGraphvizRenderingEnabled]);
 
     return (
         <>
@@ -222,7 +155,17 @@ export const MessageContent: React.FC<MessageContentProps> = React.memo(({ messa
                             </div>
                         )}
                     </summary>
-                    <div className="mt-2 pt-2 border-t border-[var(--theme-border-secondary)] text-xs text-[var(--theme-text-secondary)] markdown-body" dangerouslySetInnerHTML={renderThoughtsMarkdown(thoughts)} />
+                    <div className="mt-2 pt-2 border-t border-[var(--theme-border-secondary)] text-xs text-[var(--theme-text-secondary)] markdown-body">
+                      <MarkdownRenderer
+                          content={thoughts}
+                          isLoading={isLoading}
+                          onImageClick={onImageClick}
+                          onOpenHtmlPreview={onOpenHtmlPreview}
+                          expandCodeBlocksByDefault={expandCodeBlocksByDefault}
+                          isMermaidRenderingEnabled={isMermaidRenderingEnabled}
+                          isGraphvizRenderingEnabled={isGraphvizRenderingEnabled}
+                      />
+                    </div>
                 </details>
             )}
 
@@ -233,12 +176,18 @@ export const MessageContent: React.FC<MessageContentProps> = React.memo(({ messa
             )}
 
             {content && groundingMetadata ? (
-              <GroundedResponse text={content} metadata={groundingMetadata} onOpenHtmlPreview={onOpenHtmlPreview} expandCodeBlocksByDefault={expandCodeBlocksByDefault} />
+              <GroundedResponse text={content} metadata={groundingMetadata} isLoading={isLoading} onOpenHtmlPreview={onOpenHtmlPreview} expandCodeBlocksByDefault={expandCodeBlocksByDefault} onImageClick={onImageClick} isMermaidRenderingEnabled={isMermaidRenderingEnabled} isGraphvizRenderingEnabled={isGraphvizRenderingEnabled} />
             ) : content && (
                 <div className="markdown-body" style={{ fontSize: `${baseFontSize}px` }}> 
-                    <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex, rehypeHighlight]} components={components}>
-                        {content}
-                    </ReactMarkdown>
+                    <MarkdownRenderer
+                        content={content}
+                        isLoading={isLoading}
+                        onImageClick={onImageClick}
+                        onOpenHtmlPreview={onOpenHtmlPreview}
+                        expandCodeBlocksByDefault={expandCodeBlocksByDefault}
+                        isMermaidRenderingEnabled={isMermaidRenderingEnabled}
+                        isGraphvizRenderingEnabled={isGraphvizRenderingEnabled}
+                    />
                 </div>
             )}
             
@@ -253,6 +202,26 @@ export const MessageContent: React.FC<MessageContentProps> = React.memo(({ messa
                     <TokenDisplay message={message} t={t} />
                     <TokenRateDisplay message={message} />
                     {(isLoading || (generationStartTime && generationEndTime)) && <MessageTimer startTime={generationStartTime} endTime={generationEndTime} isLoading={isLoading} />}
+                </div>
+            )}
+
+            {(suggestions && suggestions.length > 0) && (
+                <div className="mt-3 pt-3 border-t border-[var(--theme-border-secondary)] border-opacity-30 flex flex-wrap gap-2">
+                    {suggestions.map((suggestion, index) => (
+                        <button
+                            key={index}
+                            onClick={() => onSuggestionClick && onSuggestionClick(suggestion)}
+                            className="suggestion-bubble"
+                        >
+                            {suggestion}
+                        </button>
+                    ))}
+                </div>
+            )}
+            { isGeneratingSuggestions && (
+                <div className="mt-3 pt-3 border-t border-[var(--theme-border-secondary)] border-opacity-30 flex items-center gap-2 text-sm text-[var(--theme-text-tertiary)] animate-pulse">
+                    <Loader2 size={14} className="animate-spin" />
+                    <span>Generating suggestions...</span>
                 </div>
             )}
         </>

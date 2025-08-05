@@ -1,4 +1,3 @@
-// hooks/useChatScroll.ts
 import { useRef, useCallback, useState, useLayoutEffect } from 'react';
 import { ChatMessage } from '../types';
 
@@ -23,10 +22,18 @@ export const useChatScroll = ({ messages, userScrolledUp }: ChatScrollProps) => 
             const { scrollHeight: prevScrollHeight, scrollTop: prevScrollTop } = scrollStateBeforeUpdate.current;
             const { clientHeight, scrollHeight: newScrollHeight } = container;
 
-            // If user was at the bottom before the update, scroll to the new bottom.
-            // A threshold provides a buffer for being "at the bottom".
-            if (prevScrollHeight - clientHeight - prevScrollTop < 100) {
-                container.scrollTop = newScrollHeight;
+            const wasAtBottom = prevScrollHeight - clientHeight - prevScrollTop < 100;
+
+            const forceScroll = !userScrolledUp.current;
+
+            // If the user was already at the bottom OR if userScrolledUp is false (forceScroll)
+            // (meaning a send just happened and auto-scroll is on), scroll down.
+            if (wasAtBottom || forceScroll) {
+                container.scrollTo({
+                    top: newScrollHeight,
+                    // Use 'auto' for instant scroll on send, 'smooth' for streaming while at bottom.
+                    behavior: forceScroll ? 'auto' : 'smooth',
+                });
             }
             
             // After using the captured state, reset it to null.

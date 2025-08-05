@@ -1,34 +1,38 @@
 import React, { useMemo } from 'react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import remarkMath from 'remark-math';
-import rehypeKatex from 'rehype-katex';
-import rehypeHighlight from 'rehype-highlight';
-import rehypeRaw from 'rehype-raw';
-import { CodeBlock } from './CodeBlock';
+import DOMPurify from 'dompurify';
+import { UploadedFile } from '../../types';
+import { MarkdownRenderer } from '../shared/MarkdownRenderer';
 
 interface GroundedResponseProps {
   text: string;
   metadata: any;
+  isLoading: boolean;
   onOpenHtmlPreview: (html: string, options?: { initialTrueFullscreen?: boolean }) => void;
   expandCodeBlocksByDefault: boolean;
+  onImageClick: (file: UploadedFile) => void;
+  isMermaidRenderingEnabled: boolean;
+  isGraphvizRenderingEnabled: boolean;
 }
 
-export const GroundedResponse: React.FC<GroundedResponseProps> = ({ text, metadata, onOpenHtmlPreview, expandCodeBlocksByDefault }) => {
+export const GroundedResponse: React.FC<GroundedResponseProps> = ({ text, metadata, isLoading, onOpenHtmlPreview, expandCodeBlocksByDefault, onImageClick, isMermaidRenderingEnabled, isGraphvizRenderingEnabled }) => {
   const content = useMemo(() => {
     if (!metadata || !metadata.groundingSupports) {
       return text;
     }
   
+    // Sanitize the raw text from the model before injecting our own HTML for citations.
+    // This prevents unsafe tags like <iframe> or <script> from being rendered.
+    const sanitizedText = DOMPurify.sanitize(text, { FORBID_TAGS: ['iframe', 'script', 'style', 'video', 'audio'] });
+
     // Combine grounding chunks and citations into a single, indexed array
     const sources = [
       ...(metadata.groundingChunks?.map((c: any) => c.web) || []),
       ...(metadata.citations || []),
     ].filter(Boolean);
 
-    if(sources.length === 0) return text;
+    if(sources.length === 0) return sanitizedText;
   
-    const encodedText = new TextEncoder().encode(text);
+    const encodedText = new TextEncoder().encode(sanitizedText);
     const toCharIndex = (byteIndex: number) => {
       return new TextDecoder().decode(encodedText.slice(0, byteIndex)).length;
     };
@@ -37,7 +41,7 @@ export const GroundedResponse: React.FC<GroundedResponseProps> = ({ text, metada
       (a: any, b: any) => (b.segment?.endIndex || 0) - (a.segment?.endIndex || 0)
     );
   
-    let contentWithCitations = text;
+    let contentWithCitations = sanitizedText;
     for (const support of sortedSupports) {
       const byteEndIndex = support.segment?.endIndex;
       if (typeof byteEndIndex !== 'number') continue;
@@ -96,36 +100,19 @@ export const GroundedResponse: React.FC<GroundedResponseProps> = ({ text, metada
     return Array.from(uniqueSources.values());
   }, [metadata]);
 
-  const components = useMemo(() => ({
-    pre: (props: any) => {
-      const { node, children, ...rest } = props;
-      const codeElement = React.Children.toArray(children).find(
-        (child: any) => child.type === 'code'
-      ) as React.ReactElement | undefined;
-      const codeClassName = codeElement?.props?.className || '';
-      return (
-        <CodeBlock 
-          {...rest} 
-          className={codeClassName} 
-          onOpenHtmlPreview={onOpenHtmlPreview} 
-          expandCodeBlocksByDefault={expandCodeBlocksByDefault}
-        >
-          {children}
-        </CodeBlock>
-      );
-    }
-  }), [onOpenHtmlPreview, expandCodeBlocksByDefault]);
-
   return (
     <div>
       <div className="markdown-body">
-        <ReactMarkdown
-          remarkPlugins={[remarkGfm, remarkMath]}
-          rehypePlugins={[rehypeRaw, rehypeKatex, rehypeHighlight]}
-          components={components}
-        >
-          {content}
-        </ReactMarkdown>
+        <MarkdownRenderer
+          content={content}
+          isLoading={isLoading}
+          onImageClick={onImageClick}
+          onOpenHtmlPreview={onOpenHtmlPreview}
+          expandCodeBlocksByDefault={expandCodeBlocksByDefault}
+          isMermaidRenderingEnabled={isMermaidRenderingEnabled}
+          isGraphvizRenderingEnabled={isGraphvizRenderingEnabled}
+          allowHtml={true}
+        />
       </div>
       {sources.length > 0 && (
         <div className="grounded-response-sources border-t border-[var(--theme-border-secondary)] pt-2 mt-3">

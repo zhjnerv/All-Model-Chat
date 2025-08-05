@@ -1,4 +1,3 @@
-// components/settings/ChatBehaviorSection.tsx (Refactored)
 import React from 'react';
 import { ModelOption } from '../../types';
 import { Settings2 } from 'lucide-react';
@@ -43,6 +42,12 @@ interface ChatBehaviorSectionProps {
   setIsGraphvizRenderingEnabled: (value: boolean) => void;
   isCompletionNotificationEnabled: boolean;
   setIsCompletionNotificationEnabled: (value: boolean) => void;
+  isSuggestionsEnabled: boolean;
+  setIsSuggestionsEnabled: (value: boolean) => void;
+  isAutoSendOnSuggestionClick: boolean;
+  setIsAutoSendOnSuggestionClick: (value: boolean) => void;
+  isAutoScrollOnSendEnabled?: boolean;
+  setIsAutoScrollOnSendEnabled: (value: boolean) => void;
   t: (key: string) => string;
 }
 
@@ -104,6 +109,12 @@ export const ChatBehaviorSection: React.FC<ChatBehaviorSectionProps> = (props) =
           setIsGraphvizRenderingEnabled={props.setIsGraphvizRenderingEnabled}
           isCompletionNotificationEnabled={props.isCompletionNotificationEnabled}
           setIsCompletionNotificationEnabled={props.setIsCompletionNotificationEnabled}
+          isSuggestionsEnabled={props.isSuggestionsEnabled}
+          setIsSuggestionsEnabled={props.setIsSuggestionsEnabled}
+          isAutoSendOnSuggestionClick={props.isAutoSendOnSuggestionClick}
+          setIsAutoSendOnSuggestionClick={props.setIsAutoSendOnSuggestionClick}
+          isAutoScrollOnSendEnabled={props.isAutoScrollOnSendEnabled ?? true}
+          setIsAutoScrollOnSendEnabled={props.setIsAutoScrollOnSendEnabled}
           t={t}
         />
       </div>

@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Settings, ChevronDown, Check, Loader2, Trash2, Pin, MessagesSquare, PanelLeftOpen, PanelLeftClose, SquarePen, Wand2, Lock, Download } from 'lucide-react'; 
+import { Settings, ChevronDown, Check, Loader2, Trash2, Pin, MessagesSquare, PanelLeftOpen, PanelLeftClose, SquarePen, Wand2, Lock, Download, PictureInPicture, PictureInPicture2 } from 'lucide-react'; 
 import { ModelOption } from '../types';
 import { translations, getResponsiveValue } from '../utils/appUtils';
 
 interface HeaderProps {
-  onNewChat: () => void; // Changed from onClearChat
+  onNewChat: () => void;
   onOpenSettingsModal: () => void; 
   onOpenScenariosModal: () => void; 
   onToggleHistorySidebar: () => void;
@@ -17,11 +17,14 @@ interface HeaderProps {
   isSwitchingModel: boolean;
   isHistorySidebarOpen: boolean;
   onLoadCanvasPrompt: () => void;
-  isCanvasPromptActive: boolean; // New prop for canvas prompt status
+  isCanvasPromptActive: boolean;
   t: (key: keyof typeof translations) => string;
   isKeyLocked: boolean;
   defaultModelId: string;
   onSetDefaultModel: (modelId: string) => void;
+  isPipSupported: boolean;
+  isPipActive: boolean;
+  onTogglePip: () => void;
   themeId: string;
 }
 
@@ -39,22 +42,29 @@ export const Header: React.FC<HeaderProps> = ({
   isSwitchingModel,
   isHistorySidebarOpen,
   onLoadCanvasPrompt,
-  isCanvasPromptActive, // Destructure new prop
+  isCanvasPromptActive,
   t,
   isKeyLocked,
   defaultModelId,
   onSetDefaultModel,
+  isPipSupported,
+  isPipActive,
+  onTogglePip,
   themeId,
 }) => {
   const [isModelSelectorOpen, setIsModelSelectorOpen] = useState(false);
+  const [hoveredModelId, setHoveredModelId] = useState<string | null>(null);
   const modelSelectorRef = useRef<HTMLDivElement>(null);
   const [newChatShortcut, setNewChatShortcut] = useState('');
+  const [pipShortcut, setPipShortcut] = useState('');
 
   const displayModelName = isModelsLoading && !currentModelName ? t('loading') : currentModelName;
 
   useEffect(() => {
     const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
-    setNewChatShortcut(`${isMac ? 'Cmd' : 'Ctrl'} + Alt + N`);
+    const modifier = isMac ? 'Cmd' : 'Ctrl';
+    setNewChatShortcut(`${modifier} + Alt + N`);
+    setPipShortcut(`${modifier} + Alt + P`);
   }, []);
 
   useEffect(() => {
@@ -76,9 +86,9 @@ export const Header: React.FC<HeaderProps> = ({
     setIsModelSelectorOpen(false);
   };
   
-  const handleSetDefault = (e: React.MouseEvent) => {
+  const handleSetDefault = (e: React.MouseEvent, modelId: string) => {
       e.stopPropagation();
-      onSetDefaultModel(selectedModelId);
+      onSetDefaultModel(modelId);
       setIsModelSelectorOpen(false);
   }
 
@@ -119,7 +129,7 @@ export const Header: React.FC<HeaderProps> = ({
           <button
             onClick={() => setIsModelSelectorOpen(!isModelSelectorOpen)}
             disabled={isModelsLoading || isLoading || isSwitchingModel}
-            className={`flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm transition-colors hover:bg-[var(--theme-bg-tertiary)] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-[var(--theme-bg-primary)] focus:ring-[var(--theme-border-focus)] disabled:opacity-70 disabled:cursor-not-allowed ${isSwitchingModel ? 'animate-pulse' : ''}`}
+            className={`flex items-center gap-2 rounded-xl px-2.5 py-1.5 text-sm transition-colors hover:bg-[var(--theme-bg-tertiary)] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-[var(--theme-bg-primary)] focus:ring-[var(--theme-border-focus)] disabled:opacity-70 disabled:cursor-not-allowed ${isSwitchingModel ? 'animate-pulse' : ''}`}
             title={`${t('headerModelSelectorTooltip_current')}: ${displayModelName}. ${t('headerModelSelectorTooltip_action')}`}
             aria-label={`${t('headerModelAriaLabel_current')}: ${displayModelName}. ${t('headerModelAriaLabel_action')}`}
             aria-haspopup="listbox"
@@ -133,7 +143,8 @@ export const Header: React.FC<HeaderProps> = ({
 
           {isModelSelectorOpen && (
             <div 
-              className="absolute top-full left-0 mt-1 w-80 sm:w-96 bg-[var(--theme-bg-secondary)] border border-[var(--theme-border-primary)] rounded-lg shadow-premium z-20 flex flex-col"
+              className="absolute top-full left-0 mt-1 w-80 sm:w-96 bg-[var(--theme-bg-secondary)] border border-[var(--theme-border-primary)] rounded-xl shadow-premium z-20 flex flex-col modal-enter-animation"
+              onMouseLeave={() => setHoveredModelId(null)}
             >
               <div className="max-h-96 overflow-y-auto custom-scrollbar" role="listbox" aria-labelledby="model-selector-button">
                 {isModelsLoading ? (
@@ -150,6 +161,7 @@ export const Header: React.FC<HeaderProps> = ({
                     <div
                       key={model.id}
                       onClick={() => handleModelSelect(model.id)}
+                      onMouseEnter={() => setHoveredModelId(model.id)}
                       role="option"
                       aria-selected={model.id === selectedModelId}
                       className={`cursor-pointer w-full text-left px-4 py-2.5 text-sm sm:text-base hover:bg-[var(--theme-bg-tertiary)] transition-colors
@@ -165,24 +177,22 @@ export const Header: React.FC<HeaderProps> = ({
                         </div>
                         {model.id === selectedModelId && <Check size={16} className="text-[var(--theme-text-link)] flex-shrink-0" />}
                       </div>
-
-                      {model.id === selectedModelId && (
+                      
+                      {model.id === defaultModelId ? (
+                        <div className="mt-2 pl-1 text-xs text-[var(--theme-text-success)] flex items-center gap-1.5 cursor-default" onClick={(e) => e.stopPropagation()}>
+                            <Check size={14} />
+                            <span>{t('header_setDefault_isDefault')}</span>
+                        </div>
+                      ) : hoveredModelId === model.id ? (
                           <div className="mt-2 pl-1" style={{ animation: `fadeInUp 0.3s ease-out both` }}>
-                              {model.id === defaultModelId ? (
-                                  <div className="text-xs text-[var(--theme-text-success)] flex items-center gap-1.5 cursor-default" onClick={(e) => e.stopPropagation()}>
-                                      <Check size={14} />
-                                      <span>{t('header_setDefault_isDefault')}</span>
-                                  </div>
-                              ) : (
-                                  <button
-                                      onClick={handleSetDefault}
-                                      className="text-xs text-[var(--theme-text-tertiary)] hover:text-[var(--theme-text-primary)] flex items-center gap-1.5"
-                                  >
-                                      <span>{t('header_setDefault_action')}</span>
-                                  </button>
-                              )}
+                              <button
+                                  onClick={(e) => handleSetDefault(e, model.id)}
+                                  className="text-xs text-[var(--theme-text-tertiary)] hover:text-[var(--theme-text-primary)] flex items-center gap-1.5"
+                              >
+                                  <span>{t('header_setDefault_action')}</span>
+                              </button>
                           </div>
-                      )}
+                      ) : null}
                     </div>
                   ))
                 ) : (
@@ -211,6 +221,16 @@ export const Header: React.FC<HeaderProps> = ({
         >
           <MessagesSquare size={getResponsiveValue(16, 18)} />
         </button>
+        {isPipSupported && (
+            <button
+              onClick={onTogglePip}
+              className="p-2 sm:p-2.5 bg-[var(--theme-bg-tertiary)] hover:bg-[var(--theme-bg-input)] text-[var(--theme-icon-settings)] rounded-lg shadow transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-[var(--theme-bg-primary)] focus:ring-[var(--theme-border-focus)] flex items-center justify-center hover:scale-105 active:scale-100"
+              aria-label={isPipActive ? 'Exit Picture-in-Picture' : 'Enter Picture-in-Picture'}
+              title={`${isPipActive ? 'Exit Picture-in-Picture' : 'Enter Picture-in-Picture'} (${pipShortcut})`}
+            >
+              {isPipActive ? <PictureInPicture2 size={getResponsiveValue(16, 18)} /> : <PictureInPicture size={getResponsiveValue(16, 18)} />}
+            </button>
+        )}
         <button
           onClick={onOpenSettingsModal} 
           className="p-2 sm:p-2.5 bg-[var(--theme-bg-tertiary)] hover:bg-[var(--theme-bg-input)] text-[var(--theme-icon-settings)] rounded-lg shadow transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-[var(--theme-bg-primary)] focus:ring-[var(--theme-border-focus)] flex items-center justify-center hover:scale-105 active:scale-100"

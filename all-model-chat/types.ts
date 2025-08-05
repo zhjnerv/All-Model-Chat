@@ -42,6 +42,8 @@ export interface ChatMessage {
   cumulativeTotalTokens?: number; // Added for cumulative token count
   audioSrc?: string; // For TTS responses
   groundingMetadata?: any;
+  suggestions?: string[];
+  isGeneratingSuggestions?: boolean;
 }
 
 export interface ModelOption {
@@ -102,7 +104,7 @@ export interface SavedChatSession {
 
 
 export interface AppSettings extends ChatSettings {
- themeId: string; 
+ themeId: 'system' | 'onyx' | 'pearl'; 
  baseFontSize: number; 
  useCustomApiConfig: boolean;
  apiKey: string | null;
@@ -116,7 +118,10 @@ export interface AppSettings extends ChatSettings {
  isAutoTitleEnabled: boolean;
  isMermaidRenderingEnabled: boolean;
  isGraphvizRenderingEnabled?: boolean;
- isCompletionNotificationEnabled?: boolean;
+ isCompletionNotificationEnabled: boolean;
+ isSuggestionsEnabled: boolean;
+ isAutoScrollOnSendEnabled?: boolean;
+ isAutoSendOnSuggestionClick?: boolean;
 }
 
 
@@ -160,6 +165,7 @@ export interface GeminiService {
   generateSpeech: (apiKey: string, modelId: string, text: string, voice: string, abortSignal: AbortSignal) => Promise<string>;
   transcribeAudio: (apiKey: string, audioFile: File, modelId: string, isThinkingEnabled: boolean) => Promise<string>;
   generateTitle(apiKey: string, userContent: string, modelContent: string, language: 'en' | 'zh'): Promise<string>;
+  generateSuggestions(apiKey: string, userContent: string, modelContent: string, language: 'en' | 'zh'): Promise<string[]>;
 }
 
 export interface ThoughtSupportingPart extends Part {
@@ -182,6 +188,7 @@ export interface MessageListProps {
   isMermaidRenderingEnabled: boolean;
   isGraphvizRenderingEnabled: boolean;
   onSuggestionClick?: (suggestion: string) => void;
+  onFollowUpSuggestionClick?: (suggestion: string) => void;
   onTextToSpeech: (messageId: string, text: string) => void;
   ttsMessageId: string | null;
   t: (key: keyof typeof translations, fallback?: string) => string;
@@ -189,6 +196,7 @@ export interface MessageListProps {
   scrollNavVisibility: { up: boolean, down: boolean };
   onScrollToPrevTurn: () => void;
   onScrollToNextTurn: () => void;
+  chatInputHeight: number;
 }
 
 export interface ChatInputProps {
@@ -205,13 +213,13 @@ export interface ChatInputProps {
   onProcessFiles: (files: FileList | File[]) => Promise<void>;
   onAddFileById: (fileId: string) => Promise<void>;
   onCancelUpload: (fileId: string) => void;
+  onTranscribeAudio: (file: File) => Promise<string | null>;
   isProcessingFile: boolean; 
   fileError: string | null;
   t: (key: keyof typeof translations) => string;
   isImagenModel?: boolean;
   aspectRatio?: string;
   setAspectRatio?: (ratio: string) => void;
-  onTranscribeAudio: (file: File) => Promise<string | null>;
   isGoogleSearchEnabled: boolean;
   onToggleGoogleSearch: () => void;
   isCodeExecutionEnabled: boolean;
@@ -222,11 +230,13 @@ export interface ChatInputProps {
   onNewChat: () => void;
   onOpenSettings: () => void;
   onToggleCanvasPrompt: () => void;
-  onSelectModel: (modelId: string) => void;
-  availableModels: ModelOption[];
   onTogglePinCurrentSession: () => void;
   onRetryLastTurn: () => void;
+  onSelectModel: (modelId: string) => void;
+  availableModels: ModelOption[];
   onEditLastUserMessage: () => void;
+  onTogglePip: () => void;
+  isPipActive?: boolean;
 }
 
 export interface ChatInputToolbarProps {
@@ -315,6 +325,7 @@ export interface AppModalsProps {
   isModelsLoading: boolean;
   modelsLoadingError: string | null;
   clearCacheAndReload: () => void;
+  clearAllHistory: () => void;
   handleInstallPwa: () => void;
   installPromptEvent: any;
   isStandalone: boolean;
@@ -387,6 +398,7 @@ export interface ChatAreaProps {
   isMermaidRenderingEnabled: boolean;
   isGraphvizRenderingEnabled: boolean;
   onSuggestionClick: (suggestion: string) => void;
+  onFollowUpSuggestionClick: (suggestion: string) => void;
   onTextToSpeech: (messageId: string, text: string) => void;
   ttsMessageId: string | null;
   language: 'en' | 'zh';
@@ -397,6 +409,7 @@ export interface ChatAreaProps {
   // ChatInput Props
   appSettings: AppSettings;
   commandedInput: { text: string; id: number } | null;
+  setCommandedInput: (command: { text: string; id: number } | null) => void;
   onMessageSent: () => void;
   selectedFiles: UploadedFile[];
   setSelectedFiles: (files: UploadedFile[] | ((prevFiles: UploadedFile[]) => UploadedFile[])) => void;
@@ -425,6 +438,13 @@ export interface ChatAreaProps {
   onTogglePinCurrentSession: () => void;
   onRetryLastTurn: () => void;
   onEditLastUserMessage: () => void;
+  onOpenLogViewer: () => void;
+  onClearAllHistory: () => void;
+  
+  // PiP Props
+  isPipSupported: boolean;
+  isPipActive: boolean;
+  onTogglePip: () => void;
   
   t: (key: keyof typeof translations, fallback?: string) => string;
 }

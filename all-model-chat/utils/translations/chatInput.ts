@@ -12,6 +12,7 @@ export const chatInputTranslations = {
     attachMenu_gallery: { en: 'Gallery', zh: '图库' },
     attachMenu_uploadVideo: { en: 'Upload Video', zh: '上传视频' },
     attachMenu_takePhoto: { en: 'Take Photo', zh: '拍照' },
+    attachMenu_screenshot: { en: 'Screenshot', zh: '屏幕截图' },
     attachMenu_recordAudio: { en: 'Record Audio', zh: '录音' },
     attachMenu_addById: { en: 'Add by File ID', zh: '通过文件 ID 添加' },
     attachMenu_createText: { en: 'Create Text File', zh: '创建文本文件' },
@@ -48,6 +49,7 @@ export const chatInputTranslations = {
     help_cmd_new: { en: 'Start a new chat', zh: '开始新聊天' },
     help_cmd_settings: { en: 'Open settings', zh: '打开设置' },
     help_cmd_canvas: { en: 'Toggle Canvas Helper prompt', zh: '切换 Canvas 助手提示' },
+    help_cmd_pip: { en: 'Toggle Picture-in-Picture mode', zh: '切换画中画模式' },
     
     // Help Modal
     helpModal_title: { en: 'Command Help', zh: '命令帮助' },

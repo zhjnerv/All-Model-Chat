@@ -8,6 +8,7 @@ import { usePreloadedScenarios } from './usePreloadedScenarios';
 import { useMessageHandler } from './useMessageHandler';
 import { useChatScroll } from './useChatScroll';
 import { useAutoTitling } from './useAutoTitling';
+import { useSuggestions } from './useSuggestions';
 import { applyImageCachePolicy, generateUniqueId, getKeyForRequest, logService } from '../utils/appUtils';
 import { CHAT_HISTORY_SESSIONS_KEY } from '../constants/appConstants';
 import { geminiServiceInstance } from '../services/geminiService';
@@ -61,12 +62,31 @@ export const useChat = (appSettings: AppSettings, language: 'en' | 'zh') => {
     const historyHandler = useChatHistory({ appSettings, setSavedSessions, setSavedGroups, setActiveSessionId, setEditingMessageId, setCommandedInput, setSelectedFiles, activeJobs, updateAndPersistSessions, activeChat, language, });
     const fileHandler = useFileHandling({ appSettings, selectedFiles, setSelectedFiles, setAppFileError, isAppProcessingFile, setIsAppProcessingFile, currentChatSettings, setCurrentChatSettings: setCurrentChatSettings, });
     const scenarioHandler = usePreloadedScenarios({ startNewChat: historyHandler.startNewChat, updateAndPersistSessions });
-    const messageHandler = useMessageHandler({ appSettings, messages, isLoading, currentChatSettings, selectedFiles, setSelectedFiles, editingMessageId, setEditingMessageId, setAppFileError, aspectRatio, userScrolledUp, ttsMessageId, setTtsMessageId, activeSessionId, setActiveSessionId, setCommandedInput, activeJobs, loadingSessionIds, setLoadingSessionIds, updateAndPersistSessions, });
     const scrollHandler = useChatScroll({ messages, userScrolledUp });
+    const messageHandler = useMessageHandler({ appSettings, messages, isLoading, currentChatSettings, selectedFiles, setSelectedFiles, editingMessageId, setEditingMessageId, setAppFileError, aspectRatio, userScrolledUp, ttsMessageId, setTtsMessageId, activeSessionId, setActiveSessionId, setCommandedInput, activeJobs, loadingSessionIds, setLoadingSessionIds, updateAndPersistSessions, language, scrollContainerRef: scrollHandler.scrollContainerRef });
     useAutoTitling({ appSettings, activeChat, isLoading, updateAndPersistSessions, language, generatingTitleSessionIds, setGeneratingTitleSessionIds });
+    useSuggestions({ appSettings, activeChat, isLoading, updateAndPersistSessions, language });
     
+    const { loadChatSession, startNewChat, handleDeleteChatHistorySession } = historyHandler;
+
     useEffect(() => { historyHandler.loadInitialData(); // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
+    
+    // This effect handles the case where the active session is deleted.
+    useEffect(() => {
+        if (activeSessionId && !savedSessions.find(s => s.id === activeSessionId)) {
+            logService.warn(`Active session ${activeSessionId} is no longer available. Switching sessions.`);
+            const sortedSessions = [...savedSessions].sort((a,b) => b.timestamp - a.timestamp);
+            const nextSession = sortedSessions[0];
+            if (nextSession) {
+                loadChatSession(nextSession.id, sortedSessions);
+            } else {
+                // This case handles when the very last session is deleted.
+                startNewChat();
+            }
+        }
+    }, [savedSessions, activeSessionId, loadChatSession, startNewChat]);
+
 
     const handleTranscribeAudio = useCallback(async (audioFile: File): Promise<string | null> => {
         logService.info('Starting transcription process...');
@@ -161,9 +181,26 @@ export const useChat = (appSettings: AppSettings, language: 'en' | 'zh') => {
     
     const handleClearCurrentChat = useCallback(() => {
         if (isLoading) messageHandler.handleStopGenerating();
-        if (activeSessionId) historyHandler.handleDeleteChatHistorySession(activeSessionId);
-        else historyHandler.startNewChat();
-    }, [isLoading, activeSessionId, historyHandler, messageHandler]);
+        if (activeSessionId) {
+            updateAndPersistSessions(prev =>
+                prev.map(s =>
+                    s.id === activeSessionId
+                        ? {
+                            ...s,
+                            messages: [],
+                            title: "New Chat",
+                            // Resetting lockedApiKey is crucial to allow using new global settings
+                            settings: { ...s.settings, lockedApiKey: null }
+                          }
+                        : s
+                )
+            );
+            setSelectedFiles([]);
+        } else {
+            startNewChat();
+        }
+    }, [isLoading, activeSessionId, messageHandler.handleStopGenerating, updateAndPersistSessions, setSelectedFiles, startNewChat]);
+
 
      const toggleGoogleSearch = useCallback(() => {
         if (!activeSessionId) return;
@@ -233,6 +270,7 @@ export const useChat = (appSettings: AppSettings, language: 'en' | 'zh') => {
         handleMoveSessionToGroup: historyHandler.handleMoveSessionToGroup,
         handleToggleGroupExpansion: historyHandler.handleToggleGroupExpansion,
         clearCacheAndReload: historyHandler.clearCacheAndReload,
+        clearAllHistory: historyHandler.clearAllHistory,
         // from fileHandler
         isAppDraggingOver: fileHandler.isAppDraggingOver,
         handleProcessAndAddFiles: fileHandler.handleProcessAndAddFiles,
