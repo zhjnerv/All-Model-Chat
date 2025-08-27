@@ -1,6 +1,6 @@
 import React, { useRef } from 'react';
-import { DatabaseZap, Eraser, Trash2, FileText, DownloadCloud, Upload, Download } from 'lucide-react';
-import { getResponsiveValue } from '../../utils/appUtils';
+import { translations } from '../../utils/appUtils';
+import { Settings, MessageSquare, Bot, AlertTriangle } from 'lucide-react';
 
 interface DataManagementSectionProps {
   onClearHistory: () => void;
@@ -9,9 +9,33 @@ interface DataManagementSectionProps {
   isInstallable: boolean;
   onInstallPwa: () => void;
   onImportSettings: (file: File) => void;
-  onExportSettings: (includeHistory: boolean) => void;
-  t: (key: string) => string;
+  onExportSettings: () => void;
+  onImportHistory: (file: File) => void;
+  onExportHistory: () => void;
+  onImportScenarios: (file: File) => void;
+  onExportScenarios: () => void;
+  onReset: () => void;
+  t: (key: keyof typeof translations) => string;
 }
+
+const ActionRow: React.FC<{ label: string; children: React.ReactNode; labelClassName?: string }> = ({ label, children, labelClassName }) => (
+    <div className="flex items-center justify-between py-3">
+        <span className={`text-sm ${labelClassName || 'text-[var(--theme-text-primary)]'}`}>{label}</span>
+        <div className="flex-shrink-0 ml-4">{children}</div>
+    </div>
+);
+
+const DataGroup: React.FC<{ title: string; icon: React.ReactNode; children: React.ReactNode }> = ({ title, icon, children }) => (
+    <div className="p-3 sm:p-4 rounded-lg bg-[var(--theme-bg-secondary)] border border-[var(--theme-border-primary)]">
+        <h4 className="text-sm font-semibold text-[var(--theme-text-primary)] flex items-center mb-1">
+            {icon}
+            {title}
+        </h4>
+        <div className="divide-y divide-[var(--theme-border-secondary)]">
+            {children}
+        </div>
+    </div>
+);
 
 export const DataManagementSection: React.FC<DataManagementSectionProps> = ({
   onClearHistory,
@@ -21,104 +45,89 @@ export const DataManagementSection: React.FC<DataManagementSectionProps> = ({
   onInstallPwa,
   onImportSettings,
   onExportSettings,
+  onImportHistory,
+  onExportHistory,
+  onImportScenarios,
+  onExportScenarios,
+  onReset,
   t,
 }) => {
-  const iconSize = getResponsiveValue(14, 16);
-  const buttonIconSize = getResponsiveValue(12, 14);
-  const importInputRef = useRef<HTMLInputElement>(null);
+  const settingsImportRef = useRef<HTMLInputElement>(null);
+  const historyImportRef = useRef<HTMLInputElement>(null);
+  const scenariosImportRef = useRef<HTMLInputElement>(null);
 
-  const baseButtonClass = "px-3 sm:px-4 py-2 rounded-md transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-[var(--theme-bg-secondary)] flex items-center justify-center gap-2 text-sm font-medium w-full sm:w-auto";
+  const baseButtonClass = "px-4 py-1.5 text-sm font-medium rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-[var(--theme-bg-secondary)] border";
+  const dangerButtonClass = "px-4 py-1.5 text-sm font-medium rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 border bg-transparent border-white/50 text-white hover:bg-white/20 focus:ring-white focus:ring-offset-[var(--theme-bg-danger)]";
 
-  const handleImportClick = () => {
-    importInputRef.current?.click();
-  };
-
-  const handleFileImport = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (file) {
-      onImportSettings(file);
-    }
-    if (importInputRef.current) {
-      importInputRef.current.value = "";
-    }
+  const handleFileImport = (ref: React.RefObject<HTMLInputElement>, handler: (file: File) => void) => {
+    const file = ref.current?.files?.[0];
+    if (file) handler(file);
+    if (ref.current) ref.current.value = "";
   };
 
   return (
-    <div className="space-y-3 p-3 sm:p-4 border border-[var(--theme-border-secondary)] rounded-lg bg-[var(--theme-bg-secondary)]">
-      <h3 className="text-sm font-semibold text-[var(--theme-text-primary)] flex items-center mb-2">
-        <DatabaseZap size={iconSize} className="mr-2 text-[var(--theme-text-link)] opacity-80" />
+    <div>
+      <h3 className="text-lg font-semibold text-[var(--theme-text-primary)] flex items-center mb-4">
         {t('settingsDataManagement')}
       </h3>
-      <div className="flex flex-col sm:flex-row flex-wrap gap-3">
-        <button
-          onClick={onClearHistory}
-          type="button"
-          className={`${baseButtonClass} bg-[var(--theme-bg-tertiary)] border border-transparent text-[var(--theme-text-secondary)] hover:bg-[var(--theme-bg-danger)] hover:text-[var(--theme-text-danger)] focus:ring-[var(--theme-bg-danger)]`}
-          aria-label={t('settingsClearHistory_aria')}
-        >
-          <Eraser size={buttonIconSize} />
-          <span>{t('settingsClearHistory')}</span>
-        </button>
-        <button
-          onClick={onClearCache}
-          type="button"
-          className={`${baseButtonClass} bg-[var(--theme-bg-tertiary)] border border-transparent text-[var(--theme-text-secondary)] hover:bg-[var(--theme-bg-danger)] hover:text-[var(--theme-text-danger)] focus:ring-[var(--theme-bg-danger)]`}
-          aria-label={t('settingsClearCache_aria')}
-        >
-          <Trash2 size={buttonIconSize} />
-          <span>{t('settingsClearCache')}</span>
-        </button>
-         <button
-          onClick={onOpenLogViewer}
-          type="button"
-          className={`${baseButtonClass} bg-[var(--theme-bg-tertiary)] border border-transparent text-[var(--theme-text-secondary)] hover:bg-[var(--theme-bg-input)] hover:text-[var(--theme-text-primary)] focus:ring-[var(--theme-border-secondary)]`}
-          title={t('settingsViewLogs_title')}
-          aria-label={t('settingsViewLogs_aria')}
-        >
-          <FileText size={buttonIconSize} />
-          <span>{t('settingsViewLogs')}</span>
-        </button>
-        <button
-          onClick={onInstallPwa}
-          type="button"
-          className={`${baseButtonClass} bg-[var(--theme-bg-tertiary)] border border-transparent text-[var(--theme-text-secondary)] hover:bg-[var(--theme-bg-accent)] hover:text-[var(--theme-text-accent)] focus:ring-[var(--theme-bg-accent)] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-[var(--theme-bg-tertiary)] disabled:hover:text-[var(--theme-text-secondary)]`}
-          aria-label={t('settingsInstallApp_aria')}
-          disabled={!isInstallable}
-          title={isInstallable ? t('settingsInstallApp_available_title') : t('settingsInstallApp_unavailable_title')}
-        >
-          <DownloadCloud size={buttonIconSize} />
-          <span>{t('settingsInstallApp')}</span>
-        </button>
-        <button
-          onClick={handleImportClick}
-          type="button"
-          className={`${baseButtonClass} bg-[var(--theme-bg-tertiary)] border border-transparent text-[var(--theme-text-secondary)] hover:bg-[var(--theme-bg-input)] hover:text-[var(--theme-text-primary)] focus:ring-[var(--theme-border-secondary)]`}
-          aria-label={t('settingsImportConfig_aria')}
-        >
-          <Upload size={buttonIconSize} />
-          <span>{t('settingsImportConfig')}</span>
-        </button>
-        <input type="file" ref={importInputRef} onChange={handleFileImport} accept=".json" className="hidden" />
-        <button
-          onClick={() => onExportSettings(false)}
-          type="button"
-          className={`${baseButtonClass} bg-[var(--theme-bg-tertiary)] border border-transparent text-[var(--theme-text-secondary)] hover:bg-[var(--theme-bg-input)] hover:text-[var(--theme-text-primary)] focus:ring-[var(--theme-border-secondary)]`}
-          aria-label={t('settingsExportSettingsOnly_aria')}
-          title={t('settingsExportSettingsOnly_tooltip')}
-        >
-          <Download size={buttonIconSize} />
-          <span>{t('settingsExportSettingsOnly')}</span>
-        </button>
-        <button
-          onClick={() => onExportSettings(true)}
-          type="button"
-          className={`${baseButtonClass} bg-[var(--theme-bg-tertiary)] border border-transparent text-[var(--theme-text-secondary)] hover:bg-[var(--theme-bg-input)] hover:text-[var(--theme-text-primary)] focus:ring-[var(--theme-border-secondary)]`}
-          aria-label={t('settingsExportAllData_aria')}
-          title={t('settingsExportAllData_tooltip')}
-        >
-          <Download size={buttonIconSize} />
-          <span>{t('settingsExportAllData')}</span>
-        </button>
+      
+      <div className="space-y-4">
+          <DataGroup title="Settings" icon={<Settings size={14} className="mr-2 text-[var(--theme-text-link)]" />}>
+              <ActionRow label={t('settingsImportConfig')}>
+                  <button onClick={() => settingsImportRef.current?.click()} type="button" className={`${baseButtonClass} bg-transparent border-[var(--theme-border-secondary)] text-[var(--theme-text-secondary)] hover:bg-[var(--theme-bg-tertiary)] hover:border-[var(--theme-bg-tertiary)] focus:ring-[var(--theme-border-secondary)]`}>{t('import')}</button>
+                  <input type="file" ref={settingsImportRef} onChange={() => handleFileImport(settingsImportRef, onImportSettings)} accept=".json" className="hidden" />
+              </ActionRow>
+              <ActionRow label={t('settingsExportSettingsOnly')}>
+                  <button onClick={onExportSettings} type="button" className={`${baseButtonClass} bg-transparent border-[var(--theme-border-secondary)] text-[var(--theme-text-secondary)] hover:bg-[var(--theme-bg-tertiary)] hover:border-[var(--theme-bg-tertiary)] focus:ring-[var(--theme-border-secondary)]`}>{t('export')}</button>
+              </ActionRow>
+          </DataGroup>
+          
+          <DataGroup title="Chat History" icon={<MessageSquare size={14} className="mr-2 text-[var(--theme-text-link)]" />}>
+              <ActionRow label={t('settingsImportHistory')}>
+                  <button onClick={() => historyImportRef.current?.click()} type="button" className={`${baseButtonClass} bg-transparent border-[var(--theme-border-secondary)] text-[var(--theme-text-secondary)] hover:bg-[var(--theme-bg-tertiary)] hover:border-[var(--theme-bg-tertiary)] focus:ring-[var(--theme-border-secondary)]`}>{t('import')}</button>
+                  <input type="file" ref={historyImportRef} onChange={() => handleFileImport(historyImportRef, onImportHistory)} accept=".json" className="hidden" />
+              </ActionRow>
+              <ActionRow label={t('settingsExportHistory')}>
+                  <button onClick={onExportHistory} type="button" className={`${baseButtonClass} bg-transparent border-[var(--theme-border-secondary)] text-[var(--theme-text-secondary)] hover:bg-[var(--theme-bg-tertiary)] hover:border-[var(--theme-bg-tertiary)] focus:ring-[var(--theme-border-secondary)]`}>{t('export')}</button>
+              </ActionRow>
+          </DataGroup>
+          
+          <DataGroup title="Scenarios" icon={<Bot size={14} className="mr-2 text-[var(--theme-text-link)]" />}>
+              <ActionRow label={t('settingsImportScenarios')}>
+                  <button onClick={() => scenariosImportRef.current?.click()} type="button" className={`${baseButtonClass} bg-transparent border-[var(--theme-border-secondary)] text-[var(--theme-text-secondary)] hover:bg-[var(--theme-bg-tertiary)] hover:border-[var(--theme-bg-tertiary)] focus:ring-[var(--theme-border-secondary)]`}>{t('import')}</button>
+                  <input type="file" ref={scenariosImportRef} onChange={() => handleFileImport(scenariosImportRef, onImportScenarios)} accept=".json" className="hidden" />
+              </ActionRow>
+              <ActionRow label={t('settingsExportScenarios')}>
+                  <button onClick={onExportScenarios} type="button" className={`${baseButtonClass} bg-transparent border-[var(--theme-border-secondary)] text-[var(--theme-text-secondary)] hover:bg-[var(--theme-bg-tertiary)] hover:border-[var(--theme-bg-tertiary)] focus:ring-[var(--theme-border-secondary)]`}>{t('export')}</button>
+              </ActionRow>
+          </DataGroup>
+          
+           <DataGroup title="General" icon={<Settings size={14} className="mr-2 text-[var(--theme-text-link)]" />}>
+              <ActionRow label={t('settingsViewLogs')}>
+                <button onClick={onOpenLogViewer} type="button" className={`${baseButtonClass} bg-transparent border-[var(--theme-border-secondary)] text-[var(--theme-text-secondary)] hover:bg-[var(--theme-bg-tertiary)] hover:border-[var(--theme-bg-tertiary)] focus:ring-[var(--theme-border-secondary)]`}>{t('settingsViewLogs')}</button>
+              </ActionRow>
+              <ActionRow label={t('settingsInstallApp')}>
+                <button onClick={onInstallPwa} type="button" disabled={!isInstallable} className={`${baseButtonClass} bg-transparent border-[var(--theme-border-secondary)] text-[var(--theme-text-secondary)] hover:bg-[var(--theme-bg-tertiary)] hover:border-[var(--theme-bg-tertiary)] focus:ring-[var(--theme-border-secondary)] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent`}>{t('settingsInstallApp')}</button>
+              </ActionRow>
+          </DataGroup>
+
+          <div className="p-3 sm:p-4 rounded-lg bg-[var(--theme-bg-danger)]">
+              <h4 className="text-sm font-semibold text-white flex items-center mb-1">
+                  <AlertTriangle size={14} className="mr-2"/>
+                  Danger Zone
+              </h4>
+              <div className="divide-y divide-white/20">
+                  <ActionRow label={t('settingsReset')} labelClassName="text-white">
+                      <button onClick={onReset} type="button" className={dangerButtonClass}>{t('settingsReset')}</button>
+                  </ActionRow>
+                  <ActionRow label={t('settingsClearHistory')} labelClassName="text-white">
+                      <button onClick={onClearHistory} type="button" className={dangerButtonClass}>{t('settingsClearHistory')}</button>
+                  </ActionRow>
+                  <ActionRow label={t('settingsClearCache')} labelClassName="text-white">
+                      <button onClick={onClearCache} type="button" className={dangerButtonClass}>{t('settingsClearCache')}</button>
+                  </ActionRow>
+              </div>
+          </div>
       </div>
     </div>
   );

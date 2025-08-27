@@ -13,6 +13,7 @@ import { ContextMenu, ContextMenuItem } from './shared/ContextMenu';
 
 interface ChatInputProps {
   appSettings: AppSettings;
+  activeSessionId: string | null;
   commandedInput: { text: string; id: number } | null;
   onMessageSent: () => void;
   selectedFiles: UploadedFile[]; 
@@ -56,7 +57,7 @@ const MAX_TEXTAREA_HEIGHT_PX = 150;
 
 export const ChatInput: React.FC<ChatInputProps> = (props) => {
   const {
-    appSettings, commandedInput, onMessageSent, selectedFiles, setSelectedFiles, onSendMessage,
+    appSettings, activeSessionId, commandedInput, onMessageSent, selectedFiles, setSelectedFiles, onSendMessage,
     isLoading, isEditing, onStopGenerating, onCancelEdit, onProcessFiles,
     onAddFileById, onCancelUpload, isProcessingFile, fileError, t,
     isImagenModel, aspectRatio, setAspectRatio, onTranscribeAudio,
@@ -71,6 +72,8 @@ export const ChatInput: React.FC<ChatInputProps> = (props) => {
   const [isAnimatingSend, setIsAnimatingSend] = useState(false);
   const [fileIdInput, setFileIdInput] = useState('');
   const [isAddingById, setIsAddingById] = useState(false);
+  const [urlInput, setUrlInput] = useState('');
+  const [isAddingByUrl, setIsAddingByUrl] = useState(false);
   const [isWaitingForUpload, setIsWaitingForUpload] = useState(false);
   const [contextMenu, setContextMenu] = useState<{ isOpen: boolean; x: number; y: number; items: ContextMenuItem[] } | null>(null);
 
@@ -90,10 +93,10 @@ export const ChatInput: React.FC<ChatInputProps> = (props) => {
   }, []);
 
   const {
-    showCamera, showRecorder, showCreateTextFileEditor, showAddByIdInput, isHelpModalOpen,
+    showCamera, showRecorder, showCreateTextFileEditor, showAddByIdInput, showAddByUrlInput, isHelpModalOpen,
     fileInputRef, imageInputRef, videoInputRef,
     handleAttachmentAction, handleConfirmCreateTextFile, handlePhotoCapture, handleAudioRecord,
-    setIsHelpModalOpen, setShowAddByIdInput, setShowCamera, setShowRecorder, setShowCreateTextFileEditor,
+    setIsHelpModalOpen, setShowAddByIdInput, setShowCamera, setShowRecorder, setShowCreateTextFileEditor, setShowAddByUrlInput,
   } = useChatInputModals({
     onProcessFiles: (files) => onProcessFiles(files),
     justInitiatedFileOpRef,
@@ -117,7 +120,14 @@ export const ChatInput: React.FC<ChatInputProps> = (props) => {
     availableModels, onSelectModel, onMessageSent, setIsHelpModalOpen, textareaRef, onEditLastUserMessage, setInputText,
     onTogglePip,
   });
-
+  
+  const clearCurrentDraft = useCallback(() => {
+    if (activeSessionId) {
+        const draftKey = `chatDraft_${activeSessionId}`;
+        localStorage.removeItem(draftKey);
+    }
+  }, [activeSessionId]);
+  
   useEffect(() => {
     if (commandedInput) {
       setInputText(commandedInput.text);
@@ -148,6 +158,7 @@ export const ChatInput: React.FC<ChatInputProps> = (props) => {
     if (isWaitingForUpload) {
         const filesAreStillProcessing = selectedFiles.some(f => f.isProcessing);
         if (!filesAreStillProcessing) {
+            clearCurrentDraft();
             onSendMessage(inputText);
             setInputText('');
             onMessageSent();
@@ -156,7 +167,30 @@ export const ChatInput: React.FC<ChatInputProps> = (props) => {
             setTimeout(() => setIsAnimatingSend(false), 400);
         }
     }
-  }, [isWaitingForUpload, selectedFiles, onSendMessage, inputText, onMessageSent]);
+  }, [isWaitingForUpload, selectedFiles, onSendMessage, inputText, onMessageSent, clearCurrentDraft]);
+
+  // Load draft from localStorage when session changes
+  useEffect(() => {
+      if (activeSessionId && !isEditing) {
+          const draftKey = `chatDraft_${activeSessionId}`;
+          const savedDraft = localStorage.getItem(draftKey);
+          setInputText(savedDraft || '');
+      }
+  }, [activeSessionId, isEditing]);
+
+  // Save draft to localStorage on input change (debounced)
+  useEffect(() => {
+      if (!activeSessionId) return;
+      const handler = setTimeout(() => {
+          const draftKey = `chatDraft_${activeSessionId}`;
+          if (inputText.trim()) {
+              localStorage.setItem(draftKey, inputText);
+          } else {
+              localStorage.removeItem(draftKey);
+          }
+      }, 500);
+      return () => clearTimeout(handler);
+  }, [inputText, activeSessionId]);
 
   const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     if (event.target.files?.length) {
@@ -168,10 +202,43 @@ export const ChatInput: React.FC<ChatInputProps> = (props) => {
     if (videoInputRef.current) videoInputRef.current.value = "";
   };
   
+  const handleAddUrl = useCallback(async (url: string) => {
+    const youtubeRegex = /^(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/watch\?v=|youtu\.be\/)([\w-]{11})(?:\S+)?$/;
+    if (!youtubeRegex.test(url)) {
+        props.fileError = "Invalid YouTube URL provided.";
+        return;
+    }
+    justInitiatedFileOpRef.current = true;
+    const newUrlFile: UploadedFile = {
+      id: `url-${Date.now()}`,
+      name: url.length > 30 ? `${url.substring(0, 27)}...` : url,
+      type: 'video/youtube-link',
+      size: 0,
+      fileUri: url,
+      uploadState: 'active',
+      isProcessing: false,
+    };
+    setSelectedFiles(prev => [...prev, newUrlFile]);
+    setUrlInput('');
+    setShowAddByUrlInput(false);
+    textareaRef.current?.focus();
+  }, [setSelectedFiles, setShowAddByUrlInput]);
+
   const handlePaste = async (event: React.ClipboardEvent<HTMLTextAreaElement>) => {
     const isModalOpen = showCreateTextFileEditor || showCamera || showRecorder;
+    if (isProcessingFile || isAddingById || isModalOpen) return;
+
+    const pastedText = event.clipboardData?.getData('text');
+    const youtubeRegex = /^(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/watch\?v=|youtu\.be\/)([\w-]{11})(?:\S+)?$/;
+    if (pastedText && youtubeRegex.test(pastedText)) {
+      event.preventDefault();
+      await handleAddUrl(pastedText.trim());
+      return;
+    }
+
     const items = event.clipboardData?.items;
-    if (!items || isProcessingFile || isAddingById || isModalOpen) return;
+    if (!items) return;
+
     const filesToProcess = Array.from(items)
       .filter(item => item.kind === 'file' && ALL_SUPPORTED_MIME_TYPES.includes(item.type))
       .map(item => item.getAsFile()).filter((f): f is File => f !== null);
@@ -264,6 +331,7 @@ export const ChatInput: React.FC<ChatInputProps> = (props) => {
         if (filesAreStillProcessing) {
             setIsWaitingForUpload(true);
         } else {
+            clearCurrentDraft();
             onSendMessage(inputText);
             setInputText('');
             onMessageSent();
@@ -350,7 +418,7 @@ export const ChatInput: React.FC<ChatInputProps> = (props) => {
         className={`bg-transparent ${isAnyModalOpen ? 'opacity-30 pointer-events-none' : ''}`}
         aria-hidden={isAnyModalOpen}
       >
-        <div className={`mx-auto w-full ${!isPipActive ? 'max-w-5xl' : ''} px-2 sm:px-3 pt-1 pb-[calc(env(safe-area-inset-bottom,0px)+0.5rem)]`}>
+        <div className={`mx-auto w-full ${!isPipActive ? 'max-w-6xl' : ''} px-2 sm:px-3 pt-1 pb-[calc(env(safe-area-inset-bottom,0px)+0.5rem)]`}>
             <ChatInputToolbar
               isImagenModel={isImagenModel || false}
               aspectRatio={aspectRatio}
@@ -365,6 +433,12 @@ export const ChatInput: React.FC<ChatInputProps> = (props) => {
               onAddFileByIdSubmit={handleAddFileByIdSubmit}
               onCancelAddById={() => { setShowAddByIdInput(false); setFileIdInput(''); textareaRef.current?.focus(); }}
               isAddingById={isAddingById}
+              showAddByUrlInput={showAddByUrlInput}
+              urlInput={urlInput}
+              setUrlInput={setUrlInput}
+              onAddUrlSubmit={() => handleAddUrl(urlInput)}
+              onCancelAddUrl={() => { setShowAddByUrlInput(false); setUrlInput(''); textareaRef.current?.focus(); }}
+              isAddingByUrl={isAddingByUrl}
               isLoading={isLoading}
               t={t}
             />

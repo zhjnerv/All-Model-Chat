@@ -1,6 +1,6 @@
 import React, { useEffect, useCallback, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { AppSettings } from './types';
+import { AppSettings, SavedChatSession, SavedScenario, ChatGroup } from './types';
 import { CANVAS_ASSISTANT_SYSTEM_PROMPT, DEFAULT_SYSTEM_INSTRUCTION } from './constants/appConstants';
 import { HistorySidebar } from './components/HistorySidebar';
 import { useAppSettings } from './hooks/useAppSettings';
@@ -8,12 +8,11 @@ import { useChat } from './hooks/useChat';
 import { useAppUI } from './hooks/useAppUI';
 import { useAppEvents } from './hooks/useAppEvents';
 import { usePictureInPicture } from './hooks/usePictureInPicture';
+import { useDataManagement } from './hooks/useDataManagement';
 import { getTranslator, logService } from './utils/appUtils';
 import mermaid from 'mermaid';
 import { ChatArea } from './components/layout/ChatArea';
 import { AppModals } from './components/modals/AppModals';
-import { sanitizeFilename, exportElementAsPng, exportHtmlStringAsFile, exportTextStringAsFile, gatherPageStyles } from './utils/exportUtils';
-import DOMPurify from 'dompurify';
 import { PictureInPicture2 } from 'lucide-react';
 
 
@@ -75,8 +74,6 @@ const App: React.FC = () => {
       clearAllHistory,
       handleSaveAllScenarios,
       handleLoadPreloadedScenario,
-      handleImportPreloadedScenario,
-      handleExportPreloadedScenario,
       onScrollContainerScroll: handleScroll,
       handleAppDragEnter,
       handleAppDragOver,
@@ -94,6 +91,7 @@ const App: React.FC = () => {
       toggleCodeExecution,
       toggleUrlContext,
       updateAndPersistSessions,
+      updateAndPersistGroups,
   } = chatState;
 
   const {
@@ -109,19 +107,14 @@ const App: React.FC = () => {
     handleTouchEnd,
   } = useAppUI();
   
-  const { isPipSupported, isPipActive, togglePip, pipContainer } = usePictureInPicture();
+  const { isPipSupported, isPipActive, togglePip, pipContainer } = usePictureInPicture(setIsHistorySidebarOpen);
 
   const {
     installPromptEvent,
     isStandalone,
     handleInstallPwa,
-    handleExportSettings,
-    handleImportSettings,
   } = useAppEvents({
     appSettings,
-    setAppSettings,
-    savedSessions,
-    language,
     startNewChat,
     handleClearCurrentChat,
     currentChatSettings,
@@ -129,13 +122,51 @@ const App: React.FC = () => {
     isSettingsModalOpen,
     isPreloadedMessagesModalOpen,
     setIsLogViewerOpen,
-    updateAndPersistSessions,
     onTogglePip: togglePip,
     isPipSupported,
   });
 
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [exportStatus, setExportStatus] = useState<'idle' | 'exporting'>('idle');
+  const activeChat = savedSessions.find(s => s.id === activeSessionId);
+
+  const {
+    handleExportSettings,
+    handleExportHistory,
+    handleExportAllScenarios,
+    handleImportSettings,
+    handleImportHistory,
+    handleImportAllScenarios,
+    exportChatLogic,
+  } = useDataManagement({
+    appSettings,
+    setAppSettings,
+    savedSessions,
+    updateAndPersistSessions,
+    savedGroups,
+    updateAndPersistGroups,
+    savedScenarios,
+    handleSaveAllScenarios,
+    t,
+    activeChat,
+    scrollContainerRef,
+    currentTheme,
+    language,
+  });
+
+  const handleExportChat = useCallback(async (format: 'png' | 'html' | 'txt') => {
+    if (!activeChat) return;
+    setExportStatus('exporting');
+    try {
+      await exportChatLogic(format);
+    } catch (error) {
+        logService.error(`Chat export failed (format: ${format})`, { error });
+        alert(`Export failed: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+        setExportStatus('idle');
+        setIsExportModalOpen(false);
+    }
+  }, [activeChat, exportChatLogic]);
 
 
   useEffect(() => {
@@ -219,99 +250,6 @@ const App: React.FC = () => {
     return apiModels.length === 0 && !isModelsLoading ? t('appNoModelsAvailable') : t('appNoModelSelected');
   };
 
-  const activeChat = savedSessions.find(s => s.id === activeSessionId);
-
-  const handleExportChat = useCallback(async (format: 'png' | 'html' | 'txt') => {
-    if (!activeChat) return;
-    setExportStatus('exporting');
-    
-    const safeTitle = sanitizeFilename(activeChat.title);
-    const date = new Date().toISOString().slice(0, 10);
-    const filename = `chat-${safeTitle}-${date}.${format}`;
-
-    const scrollContainer = scrollContainerRef.current;
-    let originalPaddingBottom: string | null = null;
-
-    try {
-        if (format === 'png') {
-            if (!scrollContainer) return;
-            document.body.classList.add('is-exporting-png');
-            originalPaddingBottom = scrollContainer.style.paddingBottom;
-            scrollContainer.style.paddingBottom = '16px'; // Use a small fixed padding for export
-            await new Promise(resolve => setTimeout(resolve, 100)); // Allow styles to apply
-            
-            const exportBgColor = currentTheme.id === 'pearl' ? currentTheme.colors.bgPrimary : currentTheme.colors.bgSecondary;
-            await exportElementAsPng(scrollContainer, filename, {
-                backgroundColor: exportBgColor,
-            });
-
-        } else if (format === 'html') {
-            if (!scrollContainer) return;
-
-            const headContent = await gatherPageStyles();
-            const bodyClasses = document.body.className;
-            const rootBgColor = getComputedStyle(document.documentElement).getPropertyValue('--theme-bg-primary');
-            const chatHtml = scrollContainer.innerHTML;
-
-            const fullHtml = `
-                <!DOCTYPE html>
-                <html lang="${language}">
-                <head>
-                    <meta charset="UTF-8">
-                    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                    <title>Chat Export: ${DOMPurify.sanitize(activeChat.title)}</title>
-                    ${headContent}
-                    <script>
-                        document.addEventListener('DOMContentLoaded', () => {
-                            if (window.hljs) {
-                                document.querySelectorAll('pre code').forEach((el) => {
-                                    window.hljs.highlightElement(el);
-                                });
-                            }
-                        });
-                    </script>
-                    <style>
-                        body { background-color: ${rootBgColor}; padding: 1rem; box-sizing: border-box; }
-                        .message-actions, .code-block-utility-button { display: none !important; }
-                        .sticky[aria-label="Scroll to bottom"] { display: none !important; }
-                    </style>
-                </head>
-                <body class="${bodyClasses}">
-                    <div class="exported-chat-container w-full max-w-7xl mx-auto">
-                        ${chatHtml}
-                    </div>
-                </body>
-                </html>
-            `;
-            exportHtmlStringAsFile(fullHtml, filename);
-        } else { // TXT
-            const textContent = activeChat.messages.map(message => {
-                const role = message.role === 'user' ? 'USER' : 'ASSISTANT';
-                let content = `### ${role}\n`;
-                if (message.files && message.files.length > 0) {
-                    message.files.forEach(file => {
-                        content += `[File attached: ${file.name}]\n`;
-                    });
-                }
-                content += message.content;
-                return content;
-            }).join('\n\n');
-
-            exportTextStringAsFile(textContent, filename);
-        }
-    } catch (error) {
-        logService.error(`Chat export failed (format: ${format})`, { error });
-        alert(`Export failed: ${error instanceof Error ? error.message : String(error)}`);
-    } finally {
-        document.body.classList.remove('is-exporting-png');
-        if (scrollContainer && originalPaddingBottom !== null) {
-            scrollContainer.style.paddingBottom = originalPaddingBottom;
-        }
-        setExportStatus('idle');
-        setIsExportModalOpen(false);
-    }
-}, [activeChat, currentTheme, language, scrollContainerRef]);
-
   const isCanvasPromptActive = currentChatSettings.systemInstruction === CANVAS_ASSISTANT_SYSTEM_PROMPT;
   const isImagenModel = currentChatSettings.modelId?.includes('imagen');
 
@@ -363,6 +301,7 @@ const App: React.FC = () => {
         onScrollToPrevTurn={scrollToPrevTurn}
         onScrollToNextTurn={scrollToNextTurn}
         appSettings={appSettings}
+        activeSessionId={activeSessionId}
         commandedInput={commandedInput}
         setCommandedInput={setCommandedInput}
         onMessageSent={() => setCommandedInput(null)}
@@ -407,7 +346,7 @@ const App: React.FC = () => {
       {isHistorySidebarOpen && (
         <div 
           onClick={() => setIsHistorySidebarOpen(false)} 
-          className="fixed sm:hidden inset-0 bg-black/60 z-20 transition-opacity duration-300"
+          className="fixed inset-0 bg-black/60 z-20 transition-opacity duration-300 md:hidden"
           aria-hidden="true"
         />
       )}
@@ -451,13 +390,15 @@ const App: React.FC = () => {
         isStandalone={isStandalone}
         handleImportSettings={handleImportSettings}
         handleExportSettings={handleExportSettings}
+        handleImportHistory={handleImportHistory}
+        handleExportHistory={handleExportHistory}
+        handleImportAllScenarios={handleImportAllScenarios}
+        handleExportAllScenarios={handleExportAllScenarios}
         isPreloadedMessagesModalOpen={isPreloadedMessagesModalOpen}
         setIsPreloadedMessagesModalOpen={setIsPreloadedMessagesModalOpen}
         savedScenarios={savedScenarios}
         handleSaveAllScenarios={handleSaveAllScenarios}
         handleLoadPreloadedScenario={handleLoadPreloadedScenario}
-        handleImportPreloadedScenario={handleImportPreloadedScenario}
-        handleExportPreloadedScenario={handleExportPreloadedScenario}
         isExportModalOpen={isExportModalOpen}
         setIsExportModalOpen={setIsExportModalOpen}
         handleExportChat={handleExportChat}
@@ -472,7 +413,7 @@ const App: React.FC = () => {
 
   return (
     <div 
-      className={`relative flex h-full bg-[var(--theme-bg-secondary)] text-[var(--theme-text-primary)] theme-${currentTheme.id}`}
+      className={`relative flex h-full bg-[var(--theme-bg-secondary)] text-[var(--theme-text-primary)] theme-${currentTheme.id} overflow-hidden`}
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
     >

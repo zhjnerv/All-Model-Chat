@@ -109,6 +109,7 @@ export interface AppSettings extends ChatSettings {
  useCustomApiConfig: boolean;
  apiKey: string | null;
  apiProxyUrl: string | null;
+ useApiProxy?: boolean;
  language: 'en' | 'zh' | 'system';
  isStreamingEnabled: boolean;
  transcriptionModelId: string;
@@ -201,6 +202,7 @@ export interface MessageListProps {
 
 export interface ChatInputProps {
   appSettings: AppSettings;
+  activeSessionId: string | null;
   commandedInput: { text: string; id: number } | null;
   onMessageSent: () => void;
   selectedFiles: UploadedFile[]; 
@@ -253,6 +255,12 @@ export interface ChatInputToolbarProps {
   onAddFileByIdSubmit: () => Promise<void>;
   onCancelAddById: () => void;
   isAddingById: boolean;
+  showAddByUrlInput: boolean;
+  urlInput: string;
+  setUrlInput: (value: string) => void;
+  onAddUrlSubmit: () => void;
+  onCancelAddUrl: () => void;
+  isAddingByUrl: boolean;
   isLoading: boolean;
   t: (key: keyof typeof translations) => string;
 }
@@ -329,16 +337,19 @@ export interface AppModalsProps {
   handleInstallPwa: () => void;
   installPromptEvent: any;
   isStandalone: boolean;
+  
   handleImportSettings: (file: File) => void;
-  handleExportSettings: (includeHistory: boolean) => void;
+  handleExportSettings: () => void;
+  handleImportHistory: (file: File) => void;
+  handleExportHistory: () => void;
+  handleImportAllScenarios: (file: File) => void;
+  handleExportAllScenarios: () => void;
   
   isPreloadedMessagesModalOpen: boolean;
   setIsPreloadedMessagesModalOpen: (isOpen: boolean) => void;
   savedScenarios: SavedScenario[];
   handleSaveAllScenarios: (scenarios: SavedScenario[]) => void;
   handleLoadPreloadedScenario: (messages: PreloadedMessage[]) => void;
-  handleImportPreloadedScenario: (file: File) => Promise<SavedScenario | null>;
-  handleExportPreloadedScenario: (scenario: SavedScenario) => void;
 
   isExportModalOpen: boolean;
   setIsExportModalOpen: (isOpen: boolean) => void;
@@ -353,6 +364,7 @@ export interface AppModalsProps {
 }
 
 export interface ChatAreaProps {
+  activeSessionId: string | null;
   // Drag & Drop
   isAppDraggingOver: boolean;
   handleAppDragEnter: (e: React.DragEvent<HTMLDivElement>) => void;

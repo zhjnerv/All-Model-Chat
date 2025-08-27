@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { AppSettings } from '../types';
-import { Settings2, X, SlidersHorizontal, KeyRound, Bot, Info } from 'lucide-react';
+import { Settings, X, Monitor, Layers, MessageSquare, User, Info, DatabaseZap, KeyRound } from 'lucide-react';
 import { DEFAULT_APP_SETTINGS } from '../constants/appConstants';
 import { Theme } from '../constants/themeConstants';
 import { translations, getResponsiveValue } from '../utils/appUtils';
@@ -12,6 +12,7 @@ import { SettingsActions } from './settings/SettingsActions';
 import { AboutSection } from './settings/AboutSection';
 import { ModelOption } from '../types';
 import { Modal } from './shared/Modal';
+import { Tooltip } from './settings/shared/Tooltip';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -28,28 +29,34 @@ interface SettingsModalProps {
   onInstallPwa: () => void;
   isInstallable: boolean;
   onImportSettings: (file: File) => void;
-  onExportSettings: (includeHistory: boolean) => void;
+  onExportSettings: () => void;
+  onImportHistory: (file: File) => void;
+  onExportHistory: () => void;
+  onImportScenarios: (file: File) => void;
+  onExportScenarios: () => void;
   t: (key: keyof typeof translations) => string;
 }
 
-type SettingsTab = 'general' | 'api' | 'model' | 'about';
+type SettingsTab = 'interface' | 'model' | 'account' | 'data' | 'about';
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
   isOpen, onClose, currentSettings, availableModels, availableThemes, 
   onSave, isModelsLoading, modelsLoadingError, onClearAllHistory, onClearCache, onOpenLogViewer,
-  onInstallPwa, isInstallable, t, onImportSettings, onExportSettings
+  onInstallPwa, isInstallable, t, 
+  onImportSettings, onExportSettings,
+  onImportHistory, onExportHistory,
+  onImportScenarios, onExportScenarios,
 }) => {
   const [settings, setSettings] = useState(currentSettings);
-  const [activeTab, setActiveTab] = useState<SettingsTab>('general');
+  const [activeTab, setActiveTab] = useState<SettingsTab>('interface');
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   
-  const headingIconSize = getResponsiveValue(18, 20);
-  const tabIconSize = getResponsiveValue(16, 18);
+  const tabIconSize = getResponsiveValue(18, 20);
 
   useEffect(() => {
     if (isOpen) {
       setSettings(currentSettings);
-      setActiveTab('general');
+      setActiveTab('interface');
       const timer = setTimeout(() => closeButtonRef.current?.focus(), 100);
       return () => clearTimeout(timer);
     }
@@ -59,47 +66,138 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
   const handleClose = () => { if (isOpen) onClose(); };
   const handleSave = () => { onSave(settings); };
-  const handleResetToDefaults = () => { setSettings(DEFAULT_APP_SETTINGS); };
+  const handleResetToDefaults = () => { 
+    if (window.confirm(t('settingsReset_confirm'))) {
+      setSettings(DEFAULT_APP_SETTINGS); 
+    }
+  };
   
   const updateSetting = <K extends keyof AppSettings>(key: K, value: AppSettings[K]) => {
     setSettings(prev => ({ ...prev, [key]: value }));
   };
 
-  const tabs: { id: SettingsTab; label: string; icon: React.ReactNode }[] = [
-    { id: 'general', label: 'General', icon: <SlidersHorizontal size={tabIconSize} /> },
-    { id: 'api', label: 'API', icon: <KeyRound size={tabIconSize} /> },
-    { id: 'model', label: 'Model', icon: <Bot size={tabIconSize} /> },
-    { id: 'about', label: 'About', icon: <Info size={tabIconSize} /> },
+  const tabs: { id: SettingsTab; labelKey: keyof typeof translations; icon: React.ReactNode }[] = [
+    { id: 'interface', labelKey: 'settingsTabInterface', icon: <Monitor size={tabIconSize} /> },
+    { id: 'model', labelKey: 'settingsTabModel', icon: <Layers size={tabIconSize} /> },
+    { id: 'account', labelKey: 'settingsTabAccount', icon: <KeyRound size={tabIconSize} /> },
+    { id: 'data', labelKey: 'settingsTabData', icon: <DatabaseZap size={tabIconSize} /> },
+    { id: 'about', labelKey: 'settingsTabAbout', icon: <Info size={tabIconSize} /> },
   ];
+
+  const renderTabContent = () => (
+    <div id={`tab-panel-${activeTab}`} role="tabpanel" className="flex-grow min-h-0 sm:min-w-0 overflow-y-auto custom-scrollbar bg-[var(--theme-bg-secondary)]">
+        <div className="p-4 sm:p-6 tab-content-enter-active">
+          {activeTab === 'interface' && (
+            <div>
+               <AppearanceSection
+                  themeId={settings.themeId}
+                  setThemeId={(val) => updateSetting('themeId', val)}
+                  language={settings.language}
+                  setLanguage={(val) => updateSetting('language', val)}
+                  isCompletionNotificationEnabled={settings.isCompletionNotificationEnabled}
+                  setIsCompletionNotificationEnabled={(val) => updateSetting('isCompletionNotificationEnabled', val)}
+                  baseFontSize={settings.baseFontSize}
+                  setBaseFontSize={(val) => updateSetting('baseFontSize', val)}
+                  expandCodeBlocksByDefault={settings.expandCodeBlocksByDefault}
+                  setExpandCodeBlocksByDefault={(v) => updateSetting('expandCodeBlocksByDefault', v)}
+                  isMermaidRenderingEnabled={settings.isMermaidRenderingEnabled}
+                  setIsMermaidRenderingEnabled={(v) => updateSetting('isMermaidRenderingEnabled', v)}
+                  isGraphvizRenderingEnabled={settings.isGraphvizRenderingEnabled ?? true}
+                  setIsGraphvizRenderingEnabled={(v) => updateSetting('isGraphvizRenderingEnabled', v)}
+                  isAutoScrollOnSendEnabled={settings.isAutoScrollOnSendEnabled ?? true}
+                  setIsAutoScrollOnSendEnabled={(v) => updateSetting('isAutoScrollOnSendEnabled', v)}
+                  isStreamingEnabled={settings.isStreamingEnabled}
+                  setIsStreamingEnabled={(v) => updateSetting('isStreamingEnabled', v)}
+                  isAutoTitleEnabled={settings.isAutoTitleEnabled}
+                  setIsAutoTitleEnabled={(v) => updateSetting('isAutoTitleEnabled', v)}
+                  isSuggestionsEnabled={settings.isSuggestionsEnabled}
+                  setIsSuggestionsEnabled={(v) => updateSetting('isSuggestionsEnabled', v)}
+                  isAutoSendOnSuggestionClick={settings.isAutoSendOnSuggestionClick ?? true}
+                  setIsAutoSendOnSuggestionClick={(v) => updateSetting('isAutoSendOnSuggestionClick', v)}
+                  t={t}
+                />
+            </div>
+          )}
+          {activeTab === 'model' && (
+             <ChatBehaviorSection
+                modelId={settings.modelId} setModelId={(v) => updateSetting('modelId', v)}
+                transcriptionModelId={settings.transcriptionModelId} setTranscriptionModelId={(v) => updateSetting('transcriptionModelId', v)}
+                isTranscriptionThinkingEnabled={settings.isTranscriptionThinkingEnabled} setIsTranscriptionThinkingEnabled={(v) => updateSetting('isTranscriptionThinkingEnabled', v)}
+                useFilesApiForImages={settings.useFilesApiForImages} setUseFilesApiForImages={(v) => updateSetting('useFilesApiForImages', v)}
+                ttsVoice={settings.ttsVoice} setTtsVoice={(v) => updateSetting('ttsVoice', v)}
+                systemInstruction={settings.systemInstruction} setSystemInstruction={(v) => updateSetting('systemInstruction', v)}
+                temperature={settings.temperature} setTemperature={(v) => updateSetting('temperature', v)}
+                topP={settings.topP} setTopP={(v) => updateSetting('topP', v)}
+                showThoughts={settings.showThoughts} setShowThoughts={(v) => updateSetting('showThoughts', v)}
+                thinkingBudget={settings.thinkingBudget} setThinkingBudget={(v) => updateSetting('thinkingBudget', v)}
+                isModelsLoading={isModelsLoading}
+                modelsLoadingError={modelsLoadingError}
+                availableModels={availableModels}
+                t={t}
+            />
+          )}
+          {activeTab === 'account' && (
+            <ApiConfigSection
+              useCustomApiConfig={settings.useCustomApiConfig}
+              setUseCustomApiConfig={(val) => updateSetting('useCustomApiConfig', val)}
+              apiKey={settings.apiKey}
+              setApiKey={(val) => updateSetting('apiKey', val)}
+              apiProxyUrl={settings.apiProxyUrl}
+              setApiProxyUrl={(val) => updateSetting('apiProxyUrl', val)}
+              useApiProxy={settings.useApiProxy ?? false}
+              setUseApiProxy={(val) => updateSetting('useApiProxy', val)}
+              t={t}
+            />
+          )}
+          {activeTab === 'data' && (
+             <DataManagementSection
+                onClearHistory={onClearAllHistory}
+                onClearCache={onClearCache}
+                onOpenLogViewer={() => { onOpenLogViewer(); onClose(); }}
+                onInstallPwa={onInstallPwa}
+                isInstallable={isInstallable}
+                onImportSettings={onImportSettings}
+                onExportSettings={onExportSettings}
+                onImportHistory={onImportHistory}
+                onExportHistory={onExportHistory}
+                onImportScenarios={onImportScenarios}
+                onExportScenarios={onExportScenarios}
+                onReset={handleResetToDefaults}
+                t={t}
+              />
+          )}
+          {activeTab === 'about' && ( <AboutSection t={t} /> )}
+        </div>
+      </div>
+  );
 
   return (
     <Modal isOpen={isOpen} onClose={handleClose} noPadding contentClassName="w-full h-full sm:w-auto sm:h-auto">
       <div 
-        className="bg-[var(--theme-bg-primary)] w-full h-full sm:rounded-xl sm:shadow-premium sm:w-[clamp(37.5rem,50vw,56rem)] sm:h-[85vh] sm:max-h-[800px] flex flex-col"
+        className="bg-[var(--theme-bg-primary)] w-full h-full sm:rounded-2xl sm:shadow-premium sm:w-[50rem] sm:h-[38rem] flex flex-col"
         role="document"
       >
         {/* Header */}
-        <div className="flex-shrink-0 flex justify-between items-center p-3 sm:p-4 border-b border-[var(--theme-border-primary)]">
-          <h2 id="settings-title" className="text-lg sm:text-xl font-semibold text-[var(--theme-text-link)] flex items-center">
-             <Settings2 size={headingIconSize + 2} className="mr-2.5 opacity-80" /> {t('settingsTitle')}
+        <div className="flex-shrink-0 flex justify-between items-center p-4 border-b border-[var(--theme-border-primary)]">
+          <h2 id="settings-title" className="text-lg font-semibold text-[var(--theme-text-primary)]">
+            {t('settingsTitle')}
           </h2>
-          <button ref={closeButtonRef} onClick={handleClose} className="text-[var(--theme-text-tertiary)] hover:text-[var(--theme-text-secondary)] transition-colors p-1 rounded-full" aria-label="Close settings">
-            <X size={22} />
+          <button ref={closeButtonRef} onClick={handleClose} className="text-[var(--theme-text-tertiary)] hover:text-[var(--theme-text-primary)] transition-colors p-1 rounded-full focus:outline-none focus:ring-2 focus:ring-[var(--theme-border-focus)]" aria-label="Close settings">
+            <X size={20} />
           </button>
         </div>
 
         <div className="flex-grow flex flex-col sm:flex-row min-h-0">
-          {/* Tab Navigation */}
-          <div className="flex-shrink-0 sm:w-48 border-b sm:border-b-0 sm:border-r border-[var(--theme-border-primary)] bg-[var(--theme-bg-primary)] overflow-y-auto custom-scrollbar">
-            <nav className="p-2 flex sm:flex-col space-x-1 sm:space-x-0 sm:space-y-1" aria-label="Tabs" role="tablist">
+          {/* Tab Navigation (Desktop Sidebar) */}
+          <nav className="hidden sm:flex flex-shrink-0 w-56 border-r border-[var(--theme-border-primary)] bg-[var(--theme-bg-primary)] overflow-y-auto custom-scrollbar p-4 flex-col gap-1" aria-label="Tabs" role="tablist">
               {tabs.map(tab => (
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
-                  className={`flex-1 sm:w-full flex items-center justify-center sm:justify-start gap-2 px-3 py-2 text-sm font-medium rounded-md transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-[var(--theme-bg-secondary)] focus:ring-[var(--theme-border-focus)]
+                  className={`w-full flex items-center gap-3 px-3 py-2 text-sm rounded-md transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-[var(--theme-bg-primary)] focus:ring-[var(--theme-border-focus)]
                     ${activeTab === tab.id
-                      ? 'bg-[var(--theme-bg-accent)] text-[var(--theme-text-accent)] shadow'
-                      : 'text-[var(--theme-text-secondary)] hover:bg-[var(--theme-bg-input)] hover:text-[var(--theme-text-primary)]'
+                      ? 'bg-[var(--theme-bg-tertiary)] text-[var(--theme-text-primary)] font-semibold'
+                      : 'text-[var(--theme-text-secondary)] hover:bg-[var(--theme-bg-secondary)] hover:text-[var(--theme-text-primary)] font-medium'
                     }
                   `}
                   role="tab"
@@ -107,112 +205,40 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   aria-controls={`tab-panel-${tab.id}`}
                 >
                   {tab.icon}
-                  <span>{tab.label}</span>
+                  <span>{t(tab.labelKey)}</span>
                 </button>
               ))}
-            </nav>
-          </div>
+          </nav>
           
-          {/* Content Panel */}
-          <div id={`tab-panel-${activeTab}`} role="tabpanel" className="flex-grow min-h-0 sm:min-w-0 overflow-y-auto custom-scrollbar bg-[var(--theme-bg-secondary)]">
-            <div className="p-3 sm:p-5 tab-content-enter-active">
-              {activeTab === 'general' && (
-                <div className="space-y-4">
-                  <AppearanceSection
-                    themeId={settings.themeId}
-                    setThemeId={(val) => updateSetting('themeId', val)}
-                    availableThemes={availableThemes}
-                    baseFontSize={settings.baseFontSize}
-                    setBaseFontSize={(val) => updateSetting('baseFontSize', val)}
-                    language={settings.language}
-                    setLanguage={(val) => updateSetting('language', val)}
-                    t={t}
-                  />
-                  <DataManagementSection
-                    onClearHistory={() => { onClearAllHistory(); onClose(); }}
-                    onClearCache={onClearCache}
-                    onOpenLogViewer={() => { onOpenLogViewer(); onClose(); }}
-                    onInstallPwa={onInstallPwa}
-                    isInstallable={isInstallable}
-                    onImportSettings={onImportSettings}
-                    onExportSettings={onExportSettings}
-                    t={t}
-                  />
-                </div>
-              )}
-              {activeTab === 'api' && (
-                <ApiConfigSection
-                  useCustomApiConfig={settings.useCustomApiConfig}
-                  setUseCustomApiConfig={(val) => updateSetting('useCustomApiConfig', val)}
-                  apiKey={settings.apiKey}
-                  setApiKey={(val) => updateSetting('apiKey', val)}
-                  apiProxyUrl={settings.apiProxyUrl}
-                  setApiProxyUrl={(val) => updateSetting('apiProxyUrl', val)}
-                  t={t}
-                />
-              )}
-              {activeTab === 'model' && (
-                <ChatBehaviorSection
-                  modelId={settings.modelId}
-                  setModelId={(val) => updateSetting('modelId', val)}
-                  isModelsLoading={isModelsLoading}
-                  modelsLoadingError={modelsLoadingError}
-                  availableModels={availableModels}
-                  transcriptionModelId={settings.transcriptionModelId}
-                  setTranscriptionModelId={(val) => updateSetting('transcriptionModelId', val)}
-                  ttsVoice={settings.ttsVoice}
-                  setTtsVoice={(val) => updateSetting('ttsVoice', val)}
-                  systemInstruction={settings.systemInstruction}
-                  setSystemInstruction={(val) => updateSetting('systemInstruction', val)}
-                  temperature={settings.temperature}
-                  setTemperature={(val) => updateSetting('temperature', val)}
-                  topP={settings.topP}
-                  setTopP={(val) => updateSetting('topP', val)}
-                  showThoughts={settings.showThoughts}
-                  setShowThoughts={(val) => updateSetting('showThoughts', val)}
-                  thinkingBudget={settings.thinkingBudget}
-                  setThinkingBudget={(val) => updateSetting('thinkingBudget', val)}
-                  isStreamingEnabled={settings.isStreamingEnabled}
-                  setIsStreamingEnabled={(val) => updateSetting('isStreamingEnabled', val)}
-                  isTranscriptionThinkingEnabled={settings.isTranscriptionThinkingEnabled}
-                  setIsTranscriptionThinkingEnabled={(val) => updateSetting('isTranscriptionThinkingEnabled', val)}
-                  useFilesApiForImages={settings.useFilesApiForImages}
-                  setUseFilesApiForImages={(val) => updateSetting('useFilesApiForImages', val)}
-                  expandCodeBlocksByDefault={settings.expandCodeBlocksByDefault}
-                  setExpandCodeBlocksByDefault={(val) => updateSetting('expandCodeBlocksByDefault', val)}
-                  isAutoTitleEnabled={settings.isAutoTitleEnabled}
-                  setIsAutoTitleEnabled={(val) => updateSetting('isAutoTitleEnabled', val)}
-                  isMermaidRenderingEnabled={settings.isMermaidRenderingEnabled}
-                  setIsMermaidRenderingEnabled={(val) => updateSetting('isMermaidRenderingEnabled', val)}
-                  isGraphvizRenderingEnabled={settings.isGraphvizRenderingEnabled ?? true}
-                  setIsGraphvizRenderingEnabled={(val) => updateSetting('isGraphvizRenderingEnabled', val)}
-                  isCompletionNotificationEnabled={settings.isCompletionNotificationEnabled}
-                  setIsCompletionNotificationEnabled={(val) => updateSetting('isCompletionNotificationEnabled', val)}
-                  isSuggestionsEnabled={settings.isSuggestionsEnabled}
-                  setIsSuggestionsEnabled={(val) => updateSetting('isSuggestionsEnabled', val)}
-                  isAutoSendOnSuggestionClick={settings.isAutoSendOnSuggestionClick ?? true}
-                  setIsAutoSendOnSuggestionClick={(val) => updateSetting('isAutoSendOnSuggestionClick', val)}
-                  isAutoScrollOnSendEnabled={settings.isAutoScrollOnSendEnabled}
-                  setIsAutoScrollOnSendEnabled={(val) => updateSetting('isAutoScrollOnSendEnabled', val)}
-                  t={t}
-                />
-              )}
-              {activeTab === 'about' && (
-                <AboutSection t={t} />
-              )}
+          <div className="flex-grow flex flex-col min-h-0 sm:min-w-0">
+            {/* Tab Navigation (Mobile Horizontal) */}
+            <div className="sm:hidden border-b border-[var(--theme-border-primary)] bg-[var(--theme-bg-primary)] px-2">
+                <nav className="flex space-x-1 overflow-x-auto custom-scrollbar -mb-px" role="tablist">
+                    {tabs.map(tab => (
+                        <button
+                          key={tab.id}
+                          onClick={() => setActiveTab(tab.id)}
+                          className={`flex-shrink-0 flex items-center gap-2 px-3 py-2.5 text-sm font-medium border-b-2 transition-colors focus:outline-none focus:bg-[var(--theme-bg-secondary)]
+                            ${activeTab === tab.id
+                              ? 'border-[var(--theme-border-focus)] text-[var(--theme-text-primary)]'
+                              : 'border-transparent text-[var(--theme-text-tertiary)] hover:text-[var(--theme-text-primary)]'
+                            }
+                          `}
+                          role="tab"
+                          aria-selected={activeTab === tab.id}
+                        >
+                          {tab.icon}
+                          <span>{t(tab.labelKey)}</span>
+                        </button>
+                    ))}
+                </nav>
             </div>
+            
+            {/* Content Panel */}
+            {renderTabContent()}
           </div>
         </div>
-
-        {/* Footer Actions */}
-        <div className="flex-shrink-0">
-          <SettingsActions
-            onSave={handleSave}
-            onCancel={handleClose}
-            onReset={handleResetToDefaults}
-            t={t}
-          />
-        </div>
+        <SettingsActions onSave={handleSave} onCancel={handleClose} t={t} />
       </div>
     </Modal>
   );

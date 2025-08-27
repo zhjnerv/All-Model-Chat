@@ -9,6 +9,7 @@ import { ContextMenu, ContextMenuItem } from '../shared/ContextMenu';
 
 export const ChatArea: React.FC<ChatAreaProps> = (props) => {
   const {
+    activeSessionId,
     isAppDraggingOver, handleAppDragEnter, handleAppDragOver, handleAppDragLeave, handleAppDrop,
     onNewChat, onOpenSettingsModal, onOpenScenariosModal, onToggleHistorySidebar, isLoading,
     currentModelName, availableModels, selectedModelId, onSelectModel, isModelsLoading,
@@ -132,7 +133,7 @@ export const ChatArea: React.FC<ChatAreaProps> = (props) => {
 
   return (
     <div
-      className={`flex flex-col flex-grow h-full overflow-hidden relative chat-bg-enhancement transition-all duration-300 ${isHistorySidebarOpen ? 'sm:ml-64 md:ml-72' : ''}`}
+      className="flex flex-col flex-grow h-full overflow-hidden relative chat-bg-enhancement"
       onDragEnter={handleAppDragEnter}
       onDragOver={handleAppDragOver}
       onDragLeave={handleAppDragLeave}
@@ -173,7 +174,7 @@ export const ChatArea: React.FC<ChatAreaProps> = (props) => {
         themeId={themeId}
       />
       {modelsLoadingError && (
-        <div className="p-2 bg-[var(--theme-bg-danger)] text-[var(--theme-text-danger)] text-center text-xs flex-shrink-0">{modelsLoadingError}</div>
+        <div className="mx-2 my-1 p-2 text-sm text-center text-[var(--theme-text-danger)] bg-[var(--theme-bg-danger)] bg-opacity-20 border border-[var(--theme-bg-danger)] rounded-md flex-shrink-0">{modelsLoadingError}</div>
       )}
       <MessageList
         messages={messages}
@@ -205,6 +206,7 @@ export const ChatArea: React.FC<ChatAreaProps> = (props) => {
         <div className="pointer-events-auto">
           <ChatInput
             appSettings={appSettings}
+            activeSessionId={activeSessionId}
             commandedInput={commandedInput}
             onMessageSent={onMessageSent}
             selectedFiles={selectedFiles}
