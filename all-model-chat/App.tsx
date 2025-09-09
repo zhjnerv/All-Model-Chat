@@ -33,6 +33,7 @@ const App: React.FC = () => {
       setSelectedFiles,
       editingMessageId,
       appFileError,
+      setAppFileError,
       isAppProcessingFile,
       savedSessions,
       savedGroups,
@@ -41,7 +42,6 @@ const App: React.FC = () => {
       isModelsLoading,
       modelsLoadingError,
       isSwitchingModel,
-      messagesEndRef,
       scrollContainerRef,
       savedScenarios,
       isAppDraggingOver,
@@ -154,7 +154,7 @@ const App: React.FC = () => {
     language,
   });
 
-  const handleExportChat = useCallback(async (format: 'png' | 'html' | 'txt') => {
+  const handleExportChat = useCallback(async (format: 'png' | 'html' | 'txt' | 'json') => {
     if (!activeChat) return;
     setExportStatus('exporting');
     try {
@@ -219,23 +219,33 @@ const App: React.FC = () => {
     }
   };
   
-  const handleHomepageSuggestionClick = (text: string) => {
-    setCommandedInput({ text: text + '\n', id: Date.now() });
-    setTimeout(() => {
-        const textarea = document.querySelector('textarea[aria-label="Chat message input"]') as HTMLTextAreaElement;
-        if (textarea) textarea.focus();
-    }, 0);
-  };
+  type SuggestionType = 'homepage' | 'organize' | 'follow-up';
 
-  const handleFollowUpSuggestionClick = (text: string) => {
-    if (appSettings.isAutoSendOnSuggestionClick ?? true) {
-      handleSendMessage({ text });
+  const handleSuggestionClick = (type: SuggestionType, text: string) => {
+    if (type === 'organize') {
+        // Ensure Canvas Helper is active
+        if (currentChatSettings.systemInstruction !== CANVAS_ASSISTANT_SYSTEM_PROMPT) {
+            const newSystemInstruction = CANVAS_ASSISTANT_SYSTEM_PROMPT;
+            
+            setAppSettings(prev => ({...prev, systemInstruction: newSystemInstruction}));
+
+            if (activeSessionId && setCurrentChatSettings) {
+              setCurrentChatSettings(prevSettings => ({
+                ...prevSettings,
+                systemInstruction: newSystemInstruction,
+              }));
+            }
+        }
+    }
+    
+    if (type === 'follow-up' && (appSettings.isAutoSendOnSuggestionClick ?? true)) {
+        handleSendMessage({ text });
     } else {
-      setCommandedInput({ text: text + '\n', id: Date.now() });
-      setTimeout(() => {
-          const textarea = document.querySelector('textarea[aria-label="Chat message input"]') as HTMLTextAreaElement;
-          if (textarea) textarea.focus();
-      }, 0);
+        setCommandedInput({ text: text + '\n', id: Date.now() });
+        setTimeout(() => {
+            const textarea = document.querySelector('textarea[aria-label="Chat message input"]') as HTMLTextAreaElement;
+            if (textarea) textarea.focus();
+        }, 0);
     }
   };
 
@@ -252,6 +262,7 @@ const App: React.FC = () => {
 
   const isCanvasPromptActive = currentChatSettings.systemInstruction === CANVAS_ASSISTANT_SYSTEM_PROMPT;
   const isImagenModel = currentChatSettings.modelId?.includes('imagen');
+  const isImageEditModel = currentChatSettings.modelId?.includes('image-preview');
 
   const chatAreaComponent = (
     <ChatArea
@@ -280,7 +291,6 @@ const App: React.FC = () => {
         themeId={currentTheme.id}
         modelsLoadingError={modelsLoadingError}
         messages={messages}
-        messagesEndRef={messagesEndRef}
         scrollContainerRef={scrollContainerRef}
         onScrollContainerScroll={handleScroll}
         onEditMessage={handleEditMessage}
@@ -292,8 +302,9 @@ const App: React.FC = () => {
         expandCodeBlocksByDefault={appSettings.expandCodeBlocksByDefault}
         isMermaidRenderingEnabled={appSettings.isMermaidRenderingEnabled}
         isGraphvizRenderingEnabled={appSettings.isGraphvizRenderingEnabled ?? true}
-        onSuggestionClick={handleHomepageSuggestionClick}
-        onFollowUpSuggestionClick={handleFollowUpSuggestionClick}
+        onSuggestionClick={(text: string) => handleSuggestionClick('homepage', text)}
+        onOrganizeInfoClick={(text: string) => handleSuggestionClick('organize', text)}
+        onFollowUpSuggestionClick={(text: string) => handleSuggestionClick('follow-up', text)}
         onTextToSpeech={handleTextToSpeech}
         ttsMessageId={ttsMessageId}
         language={language}
@@ -301,6 +312,8 @@ const App: React.FC = () => {
         onScrollToPrevTurn={scrollToPrevTurn}
         onScrollToNextTurn={scrollToNextTurn}
         appSettings={appSettings}
+        currentChatSettings={currentChatSettings}
+        setAppFileError={setAppFileError}
         activeSessionId={activeSessionId}
         commandedInput={commandedInput}
         setCommandedInput={setCommandedInput}
@@ -318,6 +331,7 @@ const App: React.FC = () => {
         isProcessingFile={isAppProcessingFile}
         fileError={appFileError}
         isImagenModel={isImagenModel}
+        isImageEditModel={isImageEditModel}
         aspectRatio={aspectRatio}
         setAspectRatio={setAspectRatio}
         isGoogleSearchEnabled={!!currentChatSettings.isGoogleSearchEnabled}

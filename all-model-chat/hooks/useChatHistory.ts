@@ -1,11 +1,13 @@
 import { Dispatch, SetStateAction, useCallback } from 'react';
 import { AppSettings, ChatMessage, SavedChatSession, UploadedFile, ChatSettings, ChatGroup } from '../types';
-import { CHAT_HISTORY_SESSIONS_KEY, ACTIVE_CHAT_SESSION_ID_KEY, DEFAULT_CHAT_SETTINGS, CHAT_HISTORY_GROUPS_KEY } from '../constants/appConstants';
+import { DEFAULT_CHAT_SETTINGS } from '../constants/appConstants';
 import { generateUniqueId, logService, getTranslator } from '../utils/appUtils';
+import { dbService } from '../utils/db';
+import { SUPPORTED_IMAGE_MIME_TYPES } from '../constants/fileConstants';
 
 type CommandedInputSetter = Dispatch<SetStateAction<{ text: string; id: number; } | null>>;
-type SessionsUpdater = (updater: (prev: SavedChatSession[]) => SavedChatSession[]) => void;
-type GroupsUpdater = (updater: (prev: ChatGroup[]) => ChatGroup[]) => void;
+type SessionsUpdater = (updater: (prev: SavedChatSession[]) => SavedChatSession[], options?: { persist?: boolean }) => Promise<void>;
+type GroupsUpdater = (updater: (prev: ChatGroup[]) => ChatGroup[]) => Promise<void>;
 
 interface ChatHistoryProps {
     appSettings: AppSettings;
@@ -21,6 +23,32 @@ interface ChatHistoryProps {
     activeChat: SavedChatSession | undefined;
     language: 'en' | 'zh';
 }
+
+const rehydrateSessionFiles = (session: SavedChatSession): SavedChatSession => {
+    const newMessages = session.messages.map(message => {
+        if (!message.files?.length) return message;
+
+        const newFiles = message.files.map(file => {
+            // Check if it's an image that was stored locally (has rawFile)
+            if (SUPPORTED_IMAGE_MIME_TYPES.includes(file.type) && file.rawFile) {
+                try {
+                    // Create a new blob URL. The browser will handle the old invalid one on page unload.
+                    const dataUrl = URL.createObjectURL(file.rawFile);
+                    return { ...file, dataUrl: dataUrl };
+                } catch (error) {
+                    logService.error("Failed to create object URL for file on load", { fileId: file.id, error });
+                    // Keep the file but mark that preview failed
+                    return { ...file, dataUrl: undefined, error: "Preview failed to load" };
+                }
+            }
+            return file;
+        });
+
+        return { ...message, files: newFiles };
+    });
+
+    return { ...session, messages: newMessages };
+};
 
 export const useChatHistory = ({
     appSettings,
@@ -38,7 +66,7 @@ export const useChatHistory = ({
 }: ChatHistoryProps) => {
     const t = getTranslator(language);
 
-    const startNewChat = useCallback(() => {
+    const startNewChat = useCallback(async () => {
         logService.info('Starting new chat session.');
         
         let settingsForNewChat: ChatSettings = { ...DEFAULT_CHAT_SETTINGS, ...appSettings };
@@ -61,9 +89,9 @@ export const useChatHistory = ({
             groupId: null,
         };
 
-        updateAndPersistSessions(prev => [newSession, ...prev.filter(s => s.messages.length > 0)]);
+        await updateAndPersistSessions(prev => [newSession, ...prev.filter(s => s.messages.length > 0)]);
         setActiveSessionId(newSessionId);
-        localStorage.setItem(ACTIVE_CHAT_SESSION_ID_KEY, newSessionId);
+        await dbService.setActiveSessionId(newSessionId);
 
         setCommandedInput({ text: '', id: Date.now() });
         setSelectedFiles([]);
@@ -79,7 +107,7 @@ export const useChatHistory = ({
         const sessionToLoad = allSessions.find(s => s.id === sessionId);
         if (sessionToLoad) {
             setActiveSessionId(sessionToLoad.id);
-            localStorage.setItem(ACTIVE_CHAT_SESSION_ID_KEY, sessionId);
+            dbService.setActiveSessionId(sessionId);
             setCommandedInput({ text: '', id: Date.now() });
             setSelectedFiles([]);
             setEditingMessageId(null);
@@ -92,46 +120,26 @@ export const useChatHistory = ({
         }
     }, [setActiveSessionId, setCommandedInput, setSelectedFiles, setEditingMessageId, startNewChat]);
 
-    const loadInitialData = useCallback(() => {
+    const loadInitialData = useCallback(async () => {
         try {
-            logService.info('Attempting to load chat history from localStorage.');
-            const storedSessions = localStorage.getItem(CHAT_HISTORY_SESSIONS_KEY);
-            let sessions: SavedChatSession[] = [];
-            if (storedSessions) {
-                try {
-                    const parsed = JSON.parse(storedSessions);
-                    if (Array.isArray(parsed)) {
-                        sessions = parsed;
-                    } else {
-                        logService.warn('Stored chat history is corrupted (not an array). Discarding.');
-                        localStorage.removeItem(CHAT_HISTORY_SESSIONS_KEY);
-                    }
-                } catch (e) {
-                    logService.error('Failed to parse chat history from localStorage. Discarding.', { error: e });
-                    localStorage.removeItem(CHAT_HISTORY_SESSIONS_KEY);
-                }
-            }
-            sessions.sort((a,b) => b.timestamp - a.timestamp);
-            setSavedSessions(sessions);
+            logService.info('Attempting to load chat history from IndexedDB.');
+            const [sessions, groups, storedActiveId] = await Promise.all([
+                dbService.getAllSessions(),
+                dbService.getAllGroups(),
+                dbService.getActiveSessionId()
+            ]);
 
-            const storedGroups = localStorage.getItem(CHAT_HISTORY_GROUPS_KEY);
-            if (storedGroups) {
-                try {
-                    const parsedGroups = JSON.parse(storedGroups);
-                    if (Array.isArray(parsedGroups)) {
-                        setSavedGroups(parsedGroups.map(g => ({...g, isExpanded: g.isExpanded ?? true})));
-                    }
-                } catch (e) {
-                    logService.error('Failed to parse groups from localStorage.', { error: e });
-                }
-            }
+            const rehydratedSessions = sessions.map(rehydrateSessionFiles);
+            rehydratedSessions.sort((a,b) => b.timestamp - a.timestamp);
+            
+            setSavedSessions(rehydratedSessions);
+            setSavedGroups(groups.map(g => ({...g, isExpanded: g.isExpanded ?? true})));
 
-            const storedActiveId = localStorage.getItem(ACTIVE_CHAT_SESSION_ID_KEY);
-            if (storedActiveId && sessions.find(s => s.id === storedActiveId)) {
-                loadChatSession(storedActiveId, sessions);
-            } else if (sessions.length > 0) {
+            if (storedActiveId && rehydratedSessions.find(s => s.id === storedActiveId)) {
+                loadChatSession(storedActiveId, rehydratedSessions);
+            } else if (rehydratedSessions.length > 0) {
                 logService.info('No active session ID, loading most recent session.');
-                loadChatSession(sessions[0].id, sessions);
+                loadChatSession(rehydratedSessions[0].id, rehydratedSessions);
             } else {
                 logService.info('No history found, starting fresh chat.');
                 startNewChat();
@@ -142,9 +150,9 @@ export const useChatHistory = ({
         }
     }, [setSavedSessions, setSavedGroups, loadChatSession, startNewChat]);
     
-    const handleDeleteChatHistorySession = useCallback((sessionId: string) => {
+    const handleDeleteChatHistorySession = useCallback(async (sessionId: string) => {
         logService.info(`Deleting session: ${sessionId}`);
-        updateAndPersistSessions(prev => {
+        await updateAndPersistSessions(prev => {
              const sessionToDelete = prev.find(s => s.id === sessionId);
              if (sessionToDelete) {
                  sessionToDelete.messages.forEach(msg => {
@@ -159,22 +167,22 @@ export const useChatHistory = ({
         // The logic to switch to a new active session is now handled declaratively in useChat.ts's useEffect.
     }, [updateAndPersistSessions, activeJobs]);
     
-    const handleRenameSession = useCallback((sessionId: string, newTitle: string) => {
+    const handleRenameSession = useCallback(async (sessionId: string, newTitle: string) => {
         if (!newTitle.trim()) return;
         logService.info(`Renaming session ${sessionId} to "${newTitle}"`);
-        updateAndPersistSessions(prev =>
+        await updateAndPersistSessions(prev =>
             prev.map(s => (s.id === sessionId ? { ...s, title: newTitle.trim() } : s))
         );
     }, [updateAndPersistSessions]);
 
-    const handleTogglePinSession = useCallback((sessionId: string) => {
+    const handleTogglePinSession = useCallback(async (sessionId: string) => {
         logService.info(`Toggling pin for session ${sessionId}`);
-        updateAndPersistSessions(prev =>
+        await updateAndPersistSessions(prev =>
             prev.map(s => s.id === sessionId ? { ...s, isPinned: !s.isPinned } : s)
         );
     }, [updateAndPersistSessions]);
 
-    const handleAddNewGroup = useCallback(() => {
+    const handleAddNewGroup = useCallback(async () => {
         logService.info('Adding new group.');
         const newGroup: ChatGroup = {
             id: `group-${generateUniqueId()}`,
@@ -182,41 +190,39 @@ export const useChatHistory = ({
             timestamp: Date.now(),
             isExpanded: true,
         };
-        updateAndPersistGroups(prev => [newGroup, ...prev]);
+        await updateAndPersistGroups(prev => [newGroup, ...prev]);
     }, [updateAndPersistGroups, t]);
 
-    const handleDeleteGroup = useCallback((groupId: string) => {
+    const handleDeleteGroup = useCallback(async (groupId: string) => {
         logService.info(`Deleting group: ${groupId}`);
-        updateAndPersistGroups(prev => prev.filter(g => g.id !== groupId));
-        updateAndPersistSessions(prev => prev.map(s => s.groupId === groupId ? { ...s, groupId: null } : s));
+        await updateAndPersistGroups(prev => prev.filter(g => g.id !== groupId));
+        await updateAndPersistSessions(prev => prev.map(s => s.groupId === groupId ? { ...s, groupId: null } : s));
     }, [updateAndPersistGroups, updateAndPersistSessions]);
 
-    const handleRenameGroup = useCallback((groupId: string, newTitle: string) => {
+    const handleRenameGroup = useCallback(async (groupId: string, newTitle: string) => {
         if (!newTitle.trim()) return;
         logService.info(`Renaming group ${groupId} to "${newTitle}"`);
-        updateAndPersistGroups(prev => prev.map(g => g.id === groupId ? { ...g, title: newTitle.trim() } : g));
+        await updateAndPersistGroups(prev => prev.map(g => g.id === groupId ? { ...g, title: newTitle.trim() } : g));
     }, [updateAndPersistGroups]);
     
-    const handleMoveSessionToGroup = useCallback((sessionId: string, groupId: string | null) => {
+    const handleMoveSessionToGroup = useCallback(async (sessionId: string, groupId: string | null) => {
         logService.info(`Moving session ${sessionId} to group ${groupId}`);
-        updateAndPersistSessions(prev => prev.map(s => s.id === sessionId ? { ...s, groupId } : s));
+        await updateAndPersistSessions(prev => prev.map(s => s.id === sessionId ? { ...s, groupId } : s));
     }, [updateAndPersistSessions]);
 
-    const handleToggleGroupExpansion = useCallback((groupId: string) => {
-        updateAndPersistGroups(prev => prev.map(g => g.id === groupId ? { ...g, isExpanded: !(g.isExpanded ?? true) } : g));
+    const handleToggleGroupExpansion = useCallback(async (groupId: string) => {
+        await updateAndPersistGroups(prev => prev.map(g => g.id === groupId ? { ...g, isExpanded: !(g.isExpanded ?? true) } : g));
     }, [updateAndPersistGroups]);
 
-    const clearAllHistory = useCallback(() => {
+    const clearAllHistory = useCallback(async () => {
         if (!window.confirm(t('settingsClearHistory_confirm'))) return;
         logService.warn('User clearing all chat history.');
         activeJobs.current.forEach(controller => controller.abort());
         activeJobs.current.clear();
-        localStorage.removeItem(CHAT_HISTORY_SESSIONS_KEY);
-        localStorage.removeItem(CHAT_HISTORY_GROUPS_KEY);
-        localStorage.removeItem(ACTIVE_CHAT_SESSION_ID_KEY);
+        await Promise.all([dbService.setAllSessions([]), dbService.setAllGroups([]), dbService.setActiveSessionId(null)]);
         setSavedSessions([]);
         setSavedGroups([]);
-        startNewChat();
+        await startNewChat();
     }, [setSavedSessions, setSavedGroups, startNewChat, activeJobs, t]);
     
     const clearCacheAndReload = useCallback(() => {
@@ -224,7 +230,7 @@ export const useChatHistory = ({
         logService.warn('User clearing all application cache and settings.');
         activeJobs.current.forEach(controller => controller.abort());
         activeJobs.current.clear();
-        localStorage.clear();
+        dbService.clearAllData();
         setTimeout(() => window.location.reload(), 50);
     }, [activeJobs, t]);
 

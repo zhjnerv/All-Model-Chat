@@ -40,47 +40,32 @@ export const useDataManagement = ({
     language,
 }: DataManagementProps) => {
 
-    const handleExportSettings = useCallback(() => {
-        logService.info(`Exporting settings.`);
+    const handleExportJson = useCallback((data: object, typeIdentifier: string, filePrefix: string) => {
+        logService.info(`Exporting ${typeIdentifier}.`);
         try {
-            const dataToExport = { type: 'AllModelChat-Settings', version: 1, settings: appSettings };
+            const dataToExport = { type: `AllModelChat-${typeIdentifier}`, version: 1, ...data };
             const jsonString = JSON.stringify(dataToExport, null, 2);
             const blob = new Blob([jsonString], { type: 'application/json' });
             const date = new Date().toISOString().slice(0, 10);
-            triggerDownload(URL.createObjectURL(blob), `all-model-chat-settings-${date}.json`);
+            triggerDownload(URL.createObjectURL(blob), `all-model-chat-${filePrefix}-${date}.json`);
         } catch (error) {
-            logService.error('Failed to export settings', { error });
+            logService.error(`Failed to export ${typeIdentifier}`, { error });
             alert(t('export_failed_title'));
         }
-    }, [appSettings, t]);
+    }, [t]);
+
+    const handleExportSettings = useCallback(() => {
+        handleExportJson({ settings: appSettings }, 'Settings', 'settings');
+    }, [appSettings, handleExportJson]);
 
     const handleExportHistory = useCallback(() => {
-        logService.info(`Exporting chat history.`);
-        try {
-            const dataToExport = { type: 'AllModelChat-History', version: 1, history: savedSessions, groups: savedGroups };
-            const jsonString = JSON.stringify(dataToExport, null, 2);
-            const blob = new Blob([jsonString], { type: 'application/json' });
-            const date = new Date().toISOString().slice(0, 10);
-            triggerDownload(URL.createObjectURL(blob), `all-model-chat-history-${date}.json`);
-        } catch (error) {
-            logService.error('Failed to export history', { error });
-            alert(t('export_failed_title'));
-        }
-    }, [savedSessions, savedGroups, t]);
+        handleExportJson({ history: savedSessions, groups: savedGroups }, 'History', 'history');
+    }, [savedSessions, savedGroups, handleExportJson]);
 
     const handleExportAllScenarios = useCallback(() => {
-        logService.info(`Exporting all scenarios.`);
-        try {
-            const dataToExport = { type: 'AllModelChat-Scenarios', version: 1, scenarios: savedScenarios };
-            const jsonString = JSON.stringify(dataToExport, null, 2);
-            const blob = new Blob([jsonString], { type: 'application/json' });
-            const date = new Date().toISOString().slice(0, 10);
-            triggerDownload(URL.createObjectURL(blob), `all-model-chat-scenarios-${date}.json`);
-        } catch (error) {
-            logService.error('Failed to export scenarios', { error });
-            alert(t('export_failed_title'));
-        }
-    }, [savedScenarios, t]);
+        handleExportJson({ scenarios: savedScenarios }, 'Scenarios', 'scenarios');
+    }, [savedScenarios, handleExportJson]);
+
 
     const handleImportFile = useCallback((file: File, expectedType: string, onValid: (data: any) => void) => {
         logService.info(`Importing ${expectedType} from file: ${file.name}`);
@@ -155,7 +140,7 @@ export const useDataManagement = ({
         });
     }, [handleImportFile, t, handleSaveAllScenarios]);
 
-    const exportChatLogic = useCallback(async (format: 'png' | 'html' | 'txt') => {
+    const exportChatLogic = useCallback(async (format: 'png' | 'html' | 'txt' | 'json') => {
         if (!activeChat) return;
         
         const safeTitle = sanitizeFilename(activeChat.title);
@@ -260,7 +245,7 @@ export const useDataManagement = ({
                 </html>
             `;
             exportHtmlStringAsFile(fullHtml, filename);
-        } else { // TXT
+        } else if (format === 'txt') {
             const textContent = activeChat.messages.map(message => {
                 const role = message.role === 'user' ? 'USER' : 'ASSISTANT';
                 let content = `### ${role}\n`;
@@ -274,6 +259,23 @@ export const useDataManagement = ({
             }).join('\n\n');
 
             exportTextStringAsFile(textContent, filename);
+        } else if (format === 'json') {
+            logService.info(`Exporting chat ${activeChat.id} as JSON.`);
+            try {
+                // We create a structure compatible with the history import feature
+                const dataToExport = {
+                    type: 'AllModelChat-History',
+                    version: 1,
+                    history: [activeChat], // Exporting only the active chat session
+                    groups: [], // No groups are exported with a single chat
+                };
+                const jsonString = JSON.stringify(dataToExport, null, 2);
+                const blob = new Blob([jsonString], { type: 'application/json' });
+                triggerDownload(URL.createObjectURL(blob), filename);
+            } catch (error) {
+                logService.error('Failed to export chat as JSON', { error });
+                alert(t('export_failed_title'));
+            }
         }
     }, [activeChat, currentTheme, language, scrollContainerRef, t]);
 

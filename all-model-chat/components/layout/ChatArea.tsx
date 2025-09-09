@@ -9,20 +9,20 @@ import { ContextMenu, ContextMenuItem } from '../shared/ContextMenu';
 
 export const ChatArea: React.FC<ChatAreaProps> = (props) => {
   const {
-    activeSessionId,
+    activeSessionId, currentChatSettings, setAppFileError,
     isAppDraggingOver, handleAppDragEnter, handleAppDragOver, handleAppDragLeave, handleAppDrop,
     onNewChat, onOpenSettingsModal, onOpenScenariosModal, onToggleHistorySidebar, isLoading,
     currentModelName, availableModels, selectedModelId, onSelectModel, isModelsLoading,
     isSwitchingModel, isHistorySidebarOpen, onLoadCanvasPrompt, isCanvasPromptActive,
     isKeyLocked, defaultModelId, onSetDefaultModel, themeId, modelsLoadingError,
-    messages, messagesEndRef, scrollContainerRef, onScrollContainerScroll, onEditMessage,
+    messages, scrollContainerRef, onScrollContainerScroll, onEditMessage,
     onDeleteMessage, onRetryMessage, showThoughts, themeColors, baseFontSize,
     expandCodeBlocksByDefault, isMermaidRenderingEnabled, isGraphvizRenderingEnabled,
-    onSuggestionClick, onFollowUpSuggestionClick, onTextToSpeech, ttsMessageId, language, scrollNavVisibility,
+    onSuggestionClick, onOrganizeInfoClick, onFollowUpSuggestionClick, onTextToSpeech, ttsMessageId, language, scrollNavVisibility,
     onScrollToPrevTurn, onScrollToNextTurn, appSettings, commandedInput, setCommandedInput, onMessageSent,
     selectedFiles, setSelectedFiles, onSendMessage, isEditing, onStopGenerating,
     onCancelEdit, onProcessFiles, onAddFileById, onCancelUpload, onTranscribeAudio,
-    isProcessingFile, fileError, isImagenModel, aspectRatio, setAspectRatio,
+    isProcessingFile, fileError, isImagenModel, isImageEditModel, aspectRatio, setAspectRatio,
     isGoogleSearchEnabled, onToggleGoogleSearch, isCodeExecutionEnabled, onToggleCodeExecution,
     isUrlContextEnabled, onToggleUrlContext, onClearChat, onOpenSettings, onToggleCanvasPrompt,
     onTogglePinCurrentSession, onRetryLastTurn, onEditLastUserMessage,
@@ -178,7 +178,6 @@ export const ChatArea: React.FC<ChatAreaProps> = (props) => {
       )}
       <MessageList
         messages={messages}
-        messagesEndRef={messagesEndRef}
         scrollContainerRef={scrollContainerRef}
         onScrollContainerScroll={onScrollContainerScroll}
         onEditMessage={onEditMessage}
@@ -192,6 +191,7 @@ export const ChatArea: React.FC<ChatAreaProps> = (props) => {
         isMermaidRenderingEnabled={isMermaidRenderingEnabled}
         isGraphvizRenderingEnabled={isGraphvizRenderingEnabled}
         onSuggestionClick={onSuggestionClick}
+        onOrganizeInfoClick={onOrganizeInfoClick}
         onFollowUpSuggestionClick={onFollowUpSuggestionClick}
         onTextToSpeech={onTextToSpeech}
         ttsMessageId={ttsMessageId}
@@ -201,11 +201,14 @@ export const ChatArea: React.FC<ChatAreaProps> = (props) => {
         onScrollToPrevTurn={onScrollToPrevTurn}
         onScrollToNextTurn={onScrollToNextTurn}
         chatInputHeight={chatInputHeight}
+        appSettings={appSettings}
       />
       <div ref={chatInputContainerRef} className="absolute bottom-0 left-0 right-0 z-20 pointer-events-none">
         <div className="pointer-events-auto">
           <ChatInput
             appSettings={appSettings}
+            currentChatSettings={currentChatSettings}
+            setAppFileError={setAppFileError}
             activeSessionId={activeSessionId}
             commandedInput={commandedInput}
             onMessageSent={onMessageSent}
@@ -223,6 +226,7 @@ export const ChatArea: React.FC<ChatAreaProps> = (props) => {
             isProcessingFile={isProcessingFile}
             fileError={fileError}
             isImagenModel={isImagenModel}
+            isImageEditModel={isImageEditModel}
             aspectRatio={aspectRatio}
             setAspectRatio={setAspectRatio}
             t={t}

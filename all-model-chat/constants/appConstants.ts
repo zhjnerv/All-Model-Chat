@@ -66,4 +66,6 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   isSuggestionsEnabled: true,
   isAutoScrollOnSendEnabled: true,
   isAutoSendOnSuggestionClick: true,
+  generateQuadImages: false,
+  autoFullscreenHtml: true,
 };

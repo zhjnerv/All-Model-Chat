@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
-import hljs from 'highlight.js';
 import { Loader2, Check, AlertCircle, ImageIcon, FileCode2 } from 'lucide-react';
 import { ThemeColors } from '../../../types';
 import { translations, getResponsiveValue } from '../../../utils/appUtils';
 import { exportElementAsPng, exportHtmlStringAsFile, gatherPageStyles } from '../../../utils/exportUtils';
+
+declare const hljs: any;
 
 interface ExportMessageButtonProps {
     markdownContent: string;
@@ -15,11 +16,12 @@ interface ExportMessageButtonProps {
     className?: string;
     type: 'png' | 'html';
     t: (key: keyof typeof translations) => string;
+    iconSize?: number;
 }
 
-export const ExportMessageButton: React.FC<ExportMessageButtonProps> = ({ markdownContent, messageId, themeColors, themeId, className, type, t }) => {
+export const ExportMessageButton: React.FC<ExportMessageButtonProps> = ({ markdownContent, messageId, themeColors, themeId, className, type, t, iconSize: propIconSize }) => {
   const [exportState, setExportState] = useState<'idle' | 'exporting' | 'success' | 'error'>('idle');
-  const iconSize = getResponsiveValue(14, 16);
+  const iconSize = propIconSize ?? getResponsiveValue(14, 16);
 
   const handleExport = async () => {
     if (!markdownContent || exportState === 'exporting') return;
@@ -58,9 +60,11 @@ export const ExportMessageButton: React.FC<ExportMessageButtonProps> = ({ markdo
             
             document.body.appendChild(tempContainer);
             
-            tempContainer.querySelectorAll('pre code').forEach((block) => {
-                hljs.highlightElement(block as HTMLElement);
-            });
+            if (typeof hljs !== 'undefined') {
+                tempContainer.querySelectorAll('pre code').forEach((block) => {
+                    hljs.highlightElement(block as HTMLElement);
+                });
+            }
             
             const filename = `chat-message-${messageId}.png`;
             await exportElementAsPng(tempContainer, filename, { backgroundColor: null, scale: 2.5 });

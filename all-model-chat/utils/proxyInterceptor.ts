@@ -2,6 +2,7 @@
  * 增强版代理拦截器
  * 自动拦截所有网络请求并重定向到代理服务器
  */
+import { dbService } from './db';
 
 interface ProxyConfig {
   enabled: boolean;
@@ -235,40 +236,15 @@ class ProxyInterceptor {
   }
 }
 
-/**
- * 检测代理类型
- */
-const detectProxyType = (url: string): string => {
-  const lowerUrl = url.toLowerCase();
-  
-  if (lowerUrl.includes('api-proxy.me')) return 'API-Proxy.me';
-  if (lowerUrl.includes('openai-proxy')) return 'OpenAI Proxy';
-  if (lowerUrl.includes('ai-proxy')) return 'AI Proxy';
-  if (lowerUrl.includes('gemini-proxy')) return 'Gemini Proxy';
-  if (lowerUrl.includes('google-proxy')) return 'Google Proxy';
-  if (lowerUrl.includes('cloudflare')) return 'Cloudflare Workers';
-  if (lowerUrl.includes('workers.dev')) return 'Cloudflare Workers';
-  if (lowerUrl.includes('vercel.app')) return 'Vercel';
-  if (lowerUrl.includes('netlify.app')) return 'Netlify';
-  if (lowerUrl.includes('herokuapp.com')) return 'Heroku';
-  if (lowerUrl.includes('railway.app')) return 'Railway';
-  if (lowerUrl.includes('render.com')) return 'Render';
-  if (lowerUrl.includes('fly.io')) return 'Fly.io';
-  if (lowerUrl.includes('localhost') || lowerUrl.includes('127.0.0.1')) return 'Local Proxy';
-  
-  return 'Custom Proxy';
-};
-
 // 创建全局实例
 export const proxyInterceptor = new ProxyInterceptor();
 
 // 自动初始化函数
-export const initializeProxyInterceptor = (): void => {
+export const initializeProxyInterceptor = async (): Promise<void> => {
   try {
     // 从localStorage读取设置
-    const settings = localStorage.getItem('chatAppSettings');
-    if (settings) {
-      const appSettings = JSON.parse(settings);
+    const appSettings = await dbService.getAppSettings();
+    if (appSettings) {
       
       // 如果启用了自定义API配置、代理开关，并且有代理URL，则启用拦截器
       if (appSettings.useCustomApiConfig && appSettings.useApiProxy && appSettings.apiProxyUrl) {
@@ -323,7 +299,6 @@ export const initializeProxyInterceptor = (): void => {
         console.log('✅ [ProxyInterceptor] 自动启用代理拦截器');
         console.log('📍 [ProxyInterceptor] 原始URL:', appSettings.apiProxyUrl);
         console.log('🎯 [ProxyInterceptor] 处理后URL:', proxyUrl);
-        console.log('🔧 [ProxyInterceptor] 代理类型:', detectProxyType(appSettings.apiProxyUrl));
       }
     }
   } catch (error) {

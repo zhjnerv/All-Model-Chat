@@ -2,7 +2,7 @@ import { Dispatch, SetStateAction, useCallback } from 'react';
 import { AppSettings, ChatMessage, SavedChatSession, UploadedFile, ChatSettings as IndividualChatSettings } from '../types';
 import { useApiErrorHandler } from './useApiErrorHandler';
 import { geminiServiceInstance } from '../services/geminiService';
-import { generateUniqueId, generateSessionTitle, pcmBase64ToWavUrl, showNotification } from '../utils/appUtils';
+import { generateUniqueId, generateSessionTitle, pcmBase64ToWavUrl, showNotification, base64ToBlob } from '../utils/appUtils';
 import { APP_LOGO_SVG_DATA_URI } from '../constants/appConstants';
 import { DEFAULT_CHAT_SETTINGS } from '../constants/appConstants';
 
@@ -95,10 +95,33 @@ export const useTtsImagenSender = ({
                 }
 
             } else { // Imagen
-                const imageBase64Array = await geminiServiceInstance.generateImages(keyToUse, currentChatSettings.modelId, text, aspectRatio, newAbortController.signal);
+                const imageBase64Array = appSettings.generateQuadImages
+                    ? (await Promise.all([
+                        geminiServiceInstance.generateImages(keyToUse, currentChatSettings.modelId, text, aspectRatio, newAbortController.signal),
+                        geminiServiceInstance.generateImages(keyToUse, currentChatSettings.modelId, text, aspectRatio, newAbortController.signal),
+                        geminiServiceInstance.generateImages(keyToUse, currentChatSettings.modelId, text, aspectRatio, newAbortController.signal),
+                        geminiServiceInstance.generateImages(keyToUse, currentChatSettings.modelId, text, aspectRatio, newAbortController.signal),
+                    ])).flat()
+                    : await geminiServiceInstance.generateImages(keyToUse, currentChatSettings.modelId, text, aspectRatio, newAbortController.signal);
+
                 if (newAbortController.signal.aborted) throw new Error("aborted");
-                const generatedFiles: UploadedFile[] = imageBase64Array.map((base64Data, index) => ({ id: generateUniqueId(), name: `generated-image-${index + 1}.jpeg`, type: 'image/jpeg', size: base64Data.length, dataUrl: `data:image/jpeg;base64,${base64Data}`, base64Data, uploadState: 'active' }));
-                updateAndPersistSessions(p => p.map(s => s.id === finalSessionId ? { ...s, messages: s.messages.map(m => m.id === modelMessageId ? { ...m, isLoading: false, content: `Generated image for: "${text}"`, files: generatedFiles, generationEndTime: new Date() } : m) } : s));
+                const generatedFiles: UploadedFile[] = imageBase64Array.map((base64Data, index) => {
+                    const name = `generated-image-${index + 1}.jpeg`;
+                    const type = 'image/jpeg';
+                    const blob = base64ToBlob(base64Data, type);
+                    const file = new File([blob], name, { type });
+                    const dataUrl = URL.createObjectURL(file);
+                    return {
+                        id: generateUniqueId(),
+                        name,
+                        type,
+                        size: file.size,
+                        dataUrl,
+                        rawFile: file,
+                        uploadState: 'active'
+                    };
+                });
+                updateAndPersistSessions(p => p.map(s => s.id === finalSessionId ? { ...s, messages: s.messages.map(m => m.id === modelMessageId ? { ...m, isLoading: false, content: `Generated ${generatedFiles.length} image(s) for: "${text}"`, files: generatedFiles, generationEndTime: new Date() } : m) } : s));
 
                 if (appSettings.isCompletionNotificationEnabled && document.hidden) {
                     showNotification('Image Ready', { body: 'Your image has been generated.', icon: APP_LOGO_SVG_DATA_URI });

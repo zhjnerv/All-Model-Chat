@@ -1,10 +1,11 @@
 import React, { useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import remarkBreaks from 'remark-breaks';
+import rehypeRaw from 'rehype-raw';
+import rehypeHighlight from 'rehype-highlight';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
-import rehypeHighlight from 'rehype-highlight';
-import rehypeRaw from 'rehype-raw';
 import { CodeBlock } from '../message/CodeBlock';
 import { MermaidBlock } from '../message/MermaidBlock';
 import { GraphvizBlock } from '../message/GraphvizBlock';
@@ -33,44 +34,24 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = React.memo(({
 }) => {
 
   const rehypePlugins = useMemo(() => {
-    const plugins = [rehypeKatex, rehypeHighlight];
+    // The order of plugins is important.
+    const plugins: any[] = [
+      rehypeKatex, // Process math nodes into HTML.
+    ];
+    
     if (allowHtml) {
-      plugins.unshift(rehypeRaw);
+      // If allowing raw HTML, it must be parsed next.
+      plugins.push(rehypeRaw);
     }
+    
+    // Add rehype-highlight to automatically apply syntax highlighting classes.
+    plugins.push(rehypeHighlight);
+
+    // rehype-sanitize was removed to allow complex KaTeX rendering.
+    // The output is now less secure against malicious HTML from the model if `allowHtml` is true.
+
     return plugins;
   }, [allowHtml]);
-
-  const processedContent = useMemo(() => {
-    if (!content) return '';
-
-    // This regex splits the content by code blocks (```...```), keeping the code blocks in the resulting array.
-    const parts = content.split(/(```[\s\S]*?```)/g);
-    
-    const newContent = parts.map((part, index) => {
-      // If the part is a code block (at an odd index), return it as is.
-      if (index % 2 === 1) {
-        return part;
-      }
-      
-      // Part is not a code block, so we can process it.
-      let processedPart = part;
-
-      // Fix for invalid markdown with quotes inside bold markers.
-      // e.g., **"text"** -> "**text**"
-      processedPart = processedPart.replace(/\*\*(["'“‘])(.*?)(["'”’])\*\*/g, '$1**$2**$3');
-      
-      // The original logic for handling newlines when allowHtml is true.
-      if (allowHtml) {
-        // Replace sequences of two or more newlines with a paragraph containing a non-breaking space.
-        // This creates a visual empty line.
-        processedPart = processedPart.replace(/(\r\n|\n){2,}/g, '\n\n&nbsp;\n\n');
-      }
-
-      return processedPart;
-    }).join('');
-    
-    return newContent;
-  }, [content, allowHtml]);
 
   const components = useMemo(() => ({
     pre: (props: any) => {
@@ -120,9 +101,15 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = React.memo(({
     }
   }), [onOpenHtmlPreview, expandCodeBlocksByDefault, onImageClick, isMermaidRenderingEnabled, isGraphvizRenderingEnabled, isLoading]);
 
+  // Workaround for a Markdown parsing issue with CJK characters and colons.
+  // The parser fails to correctly render bold text like "**标题：**后面字符"
+  // but works with "**标题：** 后面字符". This regex adds the necessary space.
+  // It handles both full-width (：) and half-width (:) colons.
+  const processedContent = content.replace(/((:|：)\*\*)(\S)/g, '$1 $3');
+
   return (
     <ReactMarkdown
-      remarkPlugins={[remarkGfm, remarkMath]}
+      remarkPlugins={[remarkGfm, remarkBreaks, remarkMath]}
       rehypePlugins={rehypePlugins as any}
       components={components}
     >

@@ -1,7 +1,8 @@
 import React, { useRef, useState, useCallback, useEffect } from 'react';
-import { UploadedFile, AppSettings, ModelOption } from '../types';
+import { UploadedFile, AppSettings, ModelOption, ChatSettings as IndividualChatSettings } from '../types';
 import { ALL_SUPPORTED_MIME_TYPES, SUPPORTED_IMAGE_MIME_TYPES, SUPPORTED_VIDEO_MIME_TYPES } from '../constants/fileConstants';
-import { translations, getResponsiveValue } from '../utils/appUtils';
+import { translations, getResponsiveValue, getKeyForRequest } from '../utils/appUtils';
+import { geminiServiceInstance } from '../services/geminiService';
 import { SlashCommandMenu } from './chat/input/SlashCommandMenu';
 import { ChatInputToolbar } from './chat/input/ChatInputToolbar';
 import { ChatInputActions } from './chat/input/ChatInputActions';
@@ -13,6 +14,8 @@ import { ContextMenu, ContextMenuItem } from './shared/ContextMenu';
 
 interface ChatInputProps {
   appSettings: AppSettings;
+  currentChatSettings: IndividualChatSettings;
+  setAppFileError: (error: string | null) => void;
   activeSessionId: string | null;
   commandedInput: { text: string; id: number } | null;
   onMessageSent: () => void;
@@ -31,6 +34,7 @@ interface ChatInputProps {
   fileError: string | null;
   t: (key: keyof typeof translations) => string;
   isImagenModel?: boolean;
+  isImageEditModel?: boolean;
   aspectRatio?: string;
   setAspectRatio?: (ratio: string) => void;
   isGoogleSearchEnabled: boolean;
@@ -57,10 +61,10 @@ const MAX_TEXTAREA_HEIGHT_PX = 150;
 
 export const ChatInput: React.FC<ChatInputProps> = (props) => {
   const {
-    appSettings, activeSessionId, commandedInput, onMessageSent, selectedFiles, setSelectedFiles, onSendMessage,
+    appSettings, currentChatSettings, setAppFileError, activeSessionId, commandedInput, onMessageSent, selectedFiles, setSelectedFiles, onSendMessage,
     isLoading, isEditing, onStopGenerating, onCancelEdit, onProcessFiles,
     onAddFileById, onCancelUpload, isProcessingFile, fileError, t,
-    isImagenModel, aspectRatio, setAspectRatio, onTranscribeAudio,
+    isImagenModel, isImageEditModel, aspectRatio, setAspectRatio, onTranscribeAudio,
     isGoogleSearchEnabled, onToggleGoogleSearch,
     isCodeExecutionEnabled, onToggleCodeExecution,
     isUrlContextEnabled, onToggleUrlContext,
@@ -69,6 +73,7 @@ export const ChatInput: React.FC<ChatInputProps> = (props) => {
   } = props;
 
   const [inputText, setInputText] = useState('');
+  const [isTranslating, setIsTranslating] = useState(false);
   const [isAnimatingSend, setIsAnimatingSend] = useState(false);
   const [fileIdInput, setFileIdInput] = useState('');
   const [isAddingById, setIsAddingById] = useState(false);
@@ -205,7 +210,7 @@ export const ChatInput: React.FC<ChatInputProps> = (props) => {
   const handleAddUrl = useCallback(async (url: string) => {
     const youtubeRegex = /^(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/watch\?v=|youtu\.be\/)([\w-]{11})(?:\S+)?$/;
     if (!youtubeRegex.test(url)) {
-        props.fileError = "Invalid YouTube URL provided.";
+        setAppFileError("Invalid YouTube URL provided.");
         return;
     }
     justInitiatedFileOpRef.current = true;
@@ -222,7 +227,7 @@ export const ChatInput: React.FC<ChatInputProps> = (props) => {
     setUrlInput('');
     setShowAddByUrlInput(false);
     textareaRef.current?.focus();
-  }, [setSelectedFiles, setShowAddByUrlInput]);
+  }, [setSelectedFiles, setShowAddByUrlInput, setAppFileError]);
 
   const handlePaste = async (event: React.ClipboardEvent<HTMLTextAreaElement>) => {
     const isModalOpen = showCreateTextFileEditor || showCamera || showRecorder;
@@ -322,7 +327,12 @@ export const ChatInput: React.FC<ChatInputProps> = (props) => {
 
   const isModalOpen = showCreateTextFileEditor || showCamera || showRecorder;
   const isAnyModalOpen = isModalOpen || isHelpModalOpen;
-  const canSend = (inputText.trim() !== '' || selectedFiles.length > 0) && !isLoading && !isAddingById && !isModalOpen;
+  
+  const canSend = (
+    (inputText.trim() !== '' || selectedFiles.length > 0)
+    && !isLoading && !isAddingById && !isModalOpen
+  );
+
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -338,6 +348,31 @@ export const ChatInput: React.FC<ChatInputProps> = (props) => {
             setIsAnimatingSend(true);
             setTimeout(() => setIsAnimatingSend(false), 400); 
         }
+    }
+  };
+  
+  const handleTranslate = async () => {
+    if (!inputText.trim() || isTranslating || isLoading) return;
+
+    setIsTranslating(true);
+    setAppFileError(null);
+
+    const keyResult = getKeyForRequest(appSettings, currentChatSettings);
+    if ('error' in keyResult) {
+        setAppFileError(keyResult.error);
+        setIsTranslating(false);
+        return;
+    }
+
+    try {
+        const translatedText = await geminiServiceInstance.translateText(keyResult.key, inputText);
+        setInputText(translatedText);
+        setTimeout(() => adjustTextareaHeight(), 0);
+    } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : "Translation failed.";
+        setAppFileError(errorMessage);
+    } finally {
+        setIsTranslating(false);
     }
   };
 
@@ -377,7 +412,13 @@ export const ChatInput: React.FC<ChatInputProps> = (props) => {
   };
 
   const removeSelectedFile = (fileIdToRemove: string) => {
-    setSelectedFiles(prev => prev.filter(f => f.id !== fileIdToRemove));
+    setSelectedFiles(prev => {
+        const fileToRemove = prev.find(f => f.id === fileIdToRemove);
+        if (fileToRemove && fileToRemove.dataUrl && fileToRemove.dataUrl.startsWith('blob:')) {
+            URL.revokeObjectURL(fileToRemove.dataUrl);
+        }
+        return prev.filter(f => f.id !== fileIdToRemove);
+    });
   };
 
   const handleAddFileByIdSubmit = async () => {
@@ -486,6 +527,9 @@ export const ChatInput: React.FC<ChatInputProps> = (props) => {
                             canSend={canSend}
                             isWaitingForUpload={isWaitingForUpload}
                             t={t}
+                            onTranslate={handleTranslate}
+                            isTranslating={isTranslating}
+                            inputText={inputText}
                         />
                          {/* Hidden inputs for file selection, triggered by AttachmentMenu */}
                         <input type="file" ref={fileInputRef} onChange={handleFileChange} accept={ALL_SUPPORTED_MIME_TYPES.join(',')} className="hidden" aria-hidden="true" multiple />

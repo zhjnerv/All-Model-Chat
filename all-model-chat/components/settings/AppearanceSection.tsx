@@ -1,20 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { ChevronDown, Check } from 'lucide-react';
+import { ChevronDown, Check, Info } from 'lucide-react';
 import { AppSettings, translations } from '../../types';
-
-const Toggle: React.FC<{
-  id: string;
-  checked: boolean;
-  onChange: (checked: boolean) => void;
-}> = ({ id, checked, onChange }) => (
-  <label htmlFor={id} className="flex items-center cursor-pointer">
-    <div className="relative">
-      <input id={id} type="checkbox" className="sr-only peer" checked={checked} onChange={(e) => onChange(e.target.checked)} />
-      <div className="w-11 h-6 bg-[var(--theme-bg-tertiary)] rounded-full peer peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-offset-2 peer-focus:ring-offset-[var(--theme-bg-primary)] peer-focus:ring-[var(--theme-border-focus)] peer-checked:bg-[var(--theme-bg-accent)] transition-colors duration-200 ease-in-out"></div>
-      <div className="absolute left-1 top-1 w-4 h-4 bg-white rounded-full shadow transform transition-transform duration-200 ease-in-out peer-checked:translate-x-5"></div>
-    </div>
-  </label>
-);
+import { Toggle, Tooltip } from './shared/Tooltip';
 
 interface AppearanceSectionProps {
   themeId: 'system' | 'onyx' | 'pearl';
@@ -41,6 +28,8 @@ interface AppearanceSectionProps {
   setIsSuggestionsEnabled: (value: boolean) => void;
   isAutoSendOnSuggestionClick: boolean;
   setIsAutoSendOnSuggestionClick: (value: boolean) => void;
+  autoFullscreenHtml: boolean;
+  setAutoFullscreenHtml: (value: boolean) => void;
   t: (key: keyof typeof translations) => string;
 }
 
@@ -57,6 +46,7 @@ export const AppearanceSection: React.FC<AppearanceSectionProps> = ({
   isAutoTitleEnabled, setIsAutoTitleEnabled,
   isSuggestionsEnabled, setIsSuggestionsEnabled,
   isAutoSendOnSuggestionClick, setIsAutoSendOnSuggestionClick,
+  autoFullscreenHtml, setAutoFullscreenHtml,
   t,
 }) => {
   const [isLanguageDropdownOpen, setIsLanguageDropdownOpen] = useState(false);
@@ -220,6 +210,16 @@ export const AppearanceSection: React.FC<AppearanceSectionProps> = ({
         <div className="flex justify-between items-center py-4">
             <span className="text-sm text-[var(--theme-text-primary)]">{t('settings_enableGraphvizRendering_label')}</span>
             <Toggle id="graphviz-rendering" checked={isGraphvizRenderingEnabled} onChange={setIsGraphvizRenderingEnabled} />
+        </div>
+        
+        <div className="flex justify-between items-center py-4">
+            <span className="text-sm text-[var(--theme-text-primary)] flex items-center">
+                {t('settings_autoFullscreenHtml_label')}
+                <Tooltip text={t('settings_autoFullscreenHtml_tooltip')}>
+                    <Info size={12} className="text-[var(--theme-text-tertiary)] cursor-help" />
+                </Tooltip>
+            </span>
+            <Toggle id="auto-preview-html" checked={autoFullscreenHtml} onChange={setAutoFullscreenHtml} />
         </div>
         
       </div>

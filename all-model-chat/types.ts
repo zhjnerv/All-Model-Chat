@@ -1,4 +1,4 @@
-import { Chat, Part, File as GeminiFile, UsageMetadata } from "@google/genai";
+import { Chat, Part, File as GeminiFile, UsageMetadata, ChatHistoryItem } from "@google/genai";
 import { Theme, ThemeColors } from './constants/themeConstants'; 
 import { translations } from "./utils/appUtils";
 import { AttachmentAction } from "./components/chat/input/AttachmentMenu";
@@ -18,7 +18,7 @@ export interface UploadedFile {
   error?: string; 
   
   // Fields for API uploaded files like PDFs
-  rawFile?: File; // Temporary storage for the browser File object before API upload
+  rawFile?: File | Blob; // Persisted File/Blob for offline access, used to generate dataUrl on load.
   fileUri?: string; // URI returned by Gemini API (e.g., "files/xxxxxxxx")
   fileApiName?: string; // Full resource name from API (e.g., "files/xxxxxxxx")
   uploadState?: 'pending' | 'uploading' | 'processing_api' | 'active' | 'failed' | 'cancelled'; // State of the file on Gemini API
@@ -65,10 +65,11 @@ export interface ContentPart {
   };
 }
 
-export interface ChatHistoryItem {
-  role: 'user' | 'model';
-  parts: ContentPart[]; 
-}
+// This is now defined in the @google/genai types, but we keep it here for reference and potential extension.
+// export interface ChatHistoryItem {
+//   role: 'user' | 'model';
+//   parts: ContentPart[]; 
+// }
 
 export interface ChatSettings {
   modelId: string;
@@ -123,6 +124,8 @@ export interface AppSettings extends ChatSettings {
  isSuggestionsEnabled: boolean;
  isAutoScrollOnSendEnabled?: boolean;
  isAutoSendOnSuggestionClick?: boolean;
+ generateQuadImages?: boolean;
+ autoFullscreenHtml?: boolean;
 }
 
 
@@ -131,16 +134,8 @@ export interface GeminiService {
   uploadFile: (apiKey: string, file: File, mimeType: string, displayName: string, signal: AbortSignal) => Promise<GeminiFile>;
   getFileMetadata: (apiKey: string, fileApiName: string) => Promise<GeminiFile | null>;
   sendMessageStream: (
-    apiKey: string,
-    modelId: string,
-    historyWithLastPrompt: ChatHistoryItem[],
-    systemInstruction: string,
-    config: { temperature?: number; topP?: number },
-    showThoughts: boolean,
-    thinkingBudget: number,
-    isGoogleSearchEnabled: boolean,
-    isCodeExecutionEnabled: boolean,
-    isUrlContextEnabled: boolean,
+    chat: Chat,
+    parts: Part[],
     abortSignal: AbortSignal,
     onPart: (part: Part) => void,
     onThoughtChunk: (chunk: string) => void,
@@ -148,16 +143,18 @@ export interface GeminiService {
     onComplete: (usageMetadata?: UsageMetadata, groundingMetadata?: any) => void
   ) => Promise<void>;
   sendMessageNonStream: (
+    chat: Chat,
+    parts: Part[],
+    abortSignal: AbortSignal,
+    onError: (error: Error) => void,
+    onComplete: (parts: Part[], thoughtsText?: string, usageMetadata?: UsageMetadata, groundingMetadata?: any) => void
+  ) => Promise<void>;
+  sendStatelessMessageNonStream: (
     apiKey: string,
     modelId: string,
-    historyWithLastPrompt: ChatHistoryItem[],
-    systemInstruction: string,
-    config: { temperature?: number; topP?: number },
-    showThoughts: boolean,
-    thinkingBudget: number,
-    isGoogleSearchEnabled: boolean,
-    isCodeExecutionEnabled: boolean,
-    isUrlContextEnabled: boolean,
+    history: ChatHistoryItem[],
+    parts: Part[],
+    config: any,
     abortSignal: AbortSignal,
     onError: (error: Error) => void,
     onComplete: (parts: Part[], thoughtsText?: string, usageMetadata?: UsageMetadata, groundingMetadata?: any) => void
@@ -165,8 +162,10 @@ export interface GeminiService {
   generateImages: (apiKey: string, modelId: string, prompt: string, aspectRatio: string, abortSignal: AbortSignal) => Promise<string[]>;
   generateSpeech: (apiKey: string, modelId: string, text: string, voice: string, abortSignal: AbortSignal) => Promise<string>;
   transcribeAudio: (apiKey: string, audioFile: File, modelId: string, isThinkingEnabled: boolean) => Promise<string>;
+  translateText(apiKey: string, text: string): Promise<string>;
   generateTitle(apiKey: string, userContent: string, modelContent: string, language: 'en' | 'zh'): Promise<string>;
   generateSuggestions(apiKey: string, userContent: string, modelContent: string, language: 'en' | 'zh'): Promise<string[]>;
+  editImage: (apiKey: string, modelId: string, history: ChatHistoryItem[], parts: Part[], abortSignal: AbortSignal) => Promise<Part[]>;
 }
 
 export interface ThoughtSupportingPart extends Part {
@@ -175,7 +174,6 @@ export interface ThoughtSupportingPart extends Part {
 
 export interface MessageListProps {
   messages: ChatMessage[];
-  messagesEndRef: React.RefObject<HTMLDivElement>;
   scrollContainerRef: React.RefObject<HTMLDivElement>;
   onScrollContainerScroll: () => void;
   onEditMessage: (messageId: string) => void;
@@ -189,6 +187,7 @@ export interface MessageListProps {
   isMermaidRenderingEnabled: boolean;
   isGraphvizRenderingEnabled: boolean;
   onSuggestionClick?: (suggestion: string) => void;
+  onOrganizeInfoClick?: (suggestion: string) => void;
   onFollowUpSuggestionClick?: (suggestion: string) => void;
   onTextToSpeech: (messageId: string, text: string) => void;
   ttsMessageId: string | null;
@@ -198,10 +197,13 @@ export interface MessageListProps {
   onScrollToPrevTurn: () => void;
   onScrollToNextTurn: () => void;
   chatInputHeight: number;
+  appSettings: AppSettings;
 }
 
 export interface ChatInputProps {
   appSettings: AppSettings;
+  currentChatSettings: ChatSettings;
+  setAppFileError: (error: string | null) => void;
   activeSessionId: string | null;
   commandedInput: { text: string; id: number } | null;
   onMessageSent: () => void;
@@ -220,6 +222,7 @@ export interface ChatInputProps {
   fileError: string | null;
   t: (key: keyof typeof translations) => string;
   isImagenModel?: boolean;
+  isImageEditModel?: boolean;
   aspectRatio?: string;
   setAspectRatio?: (ratio: string) => void;
   isGoogleSearchEnabled: boolean;
@@ -286,6 +289,9 @@ export interface ChatInputActionsProps {
   isWaitingForUpload: boolean;
   t: (key: keyof typeof translations) => string;
   onCancelRecording: () => void;
+  onTranslate: () => void;
+  isTranslating: boolean;
+  inputText: string;
 }
 
 export interface CommandInfo {
@@ -353,7 +359,7 @@ export interface AppModalsProps {
 
   isExportModalOpen: boolean;
   setIsExportModalOpen: (isOpen: boolean) => void;
-  handleExportChat: (format: 'png' | 'html' | 'txt') => Promise<void>;
+  handleExportChat: (format: 'png' | 'html' | 'txt' | 'json') => Promise<void>;
   exportStatus: 'idle' | 'exporting';
   
   isLogViewerOpen: boolean;
@@ -365,6 +371,8 @@ export interface AppModalsProps {
 
 export interface ChatAreaProps {
   activeSessionId: string | null;
+  currentChatSettings: ChatSettings;
+  setAppFileError: (error: string | null) => void;
   // Drag & Drop
   isAppDraggingOver: boolean;
   handleAppDragEnter: (e: React.DragEvent<HTMLDivElement>) => void;
@@ -397,7 +405,6 @@ export interface ChatAreaProps {
 
   // MessageList Props
   messages: ChatMessage[];
-  messagesEndRef: React.RefObject<HTMLDivElement>;
   scrollContainerRef: React.RefObject<HTMLDivElement>;
   onScrollContainerScroll: () => void;
   onEditMessage: (messageId: string) => void;
@@ -410,6 +417,7 @@ export interface ChatAreaProps {
   isMermaidRenderingEnabled: boolean;
   isGraphvizRenderingEnabled: boolean;
   onSuggestionClick: (suggestion: string) => void;
+  onOrganizeInfoClick: (suggestion: string) => void;
   onFollowUpSuggestionClick: (suggestion: string) => void;
   onTextToSpeech: (messageId: string, text: string) => void;
   ttsMessageId: string | null;
@@ -436,6 +444,7 @@ export interface ChatAreaProps {
   isProcessingFile: boolean;
   fileError: string | null;
   isImagenModel?: boolean;
+  isImageEditModel?: boolean;
   aspectRatio?: string;
   setAspectRatio?: (ratio: string) => void;
   isGoogleSearchEnabled: boolean;

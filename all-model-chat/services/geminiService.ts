@@ -1,9 +1,9 @@
 import { GeminiService, ChatHistoryItem, ModelOption } from '../types';
-import { Part, UsageMetadata, File as GeminiFile } from "@google/genai";
+import { Part, UsageMetadata, File as GeminiFile, Chat, Modality } from "@google/genai";
 import { getAvailableModelsApi } from './api/modelApi';
 import { uploadFileApi, getFileMetadataApi } from './api/fileApi';
-import { generateImagesApi, generateSpeechApi, transcribeAudioApi, generateTitleApi, generateSuggestionsApi } from './api/generationApi';
-import { sendMessageStreamApi, sendMessageNonStreamApi } from './api/chatApi';
+import { generateImagesApi, generateSpeechApi, transcribeAudioApi, translateTextApi, generateTitleApi, generateSuggestionsApi } from './api/generationApi';
+import { sendMessageStreamApi, sendMessageNonStreamApi, sendStatelessMessageNonStreamApi } from './api/chatApi';
 import { logService } from "./logService";
 
 class GeminiServiceImpl implements GeminiService {
@@ -35,6 +35,10 @@ class GeminiServiceImpl implements GeminiService {
         return transcribeAudioApi(apiKey, audioFile, modelId, isThinkingEnabled);
     }
 
+    async translateText(apiKey: string, text: string): Promise<string> {
+        return translateTextApi(apiKey, text);
+    }
+
     async generateTitle(apiKey: string, userContent: string, modelContent: string, language: 'en' | 'zh'): Promise<string> {
         return generateTitleApi(apiKey, userContent, modelContent, language);
     }
@@ -43,17 +47,40 @@ class GeminiServiceImpl implements GeminiService {
         return generateSuggestionsApi(apiKey, userContent, modelContent, language);
     }
 
+    async editImage(apiKey: string, modelId: string, history: ChatHistoryItem[], parts: Part[], abortSignal: AbortSignal): Promise<Part[]> {
+        return new Promise((resolve, reject) => {
+            if (abortSignal.aborted) {
+                const abortError = new Error("aborted");
+                abortError.name = "AbortError";
+                return reject(abortError);
+            }
+            const handleComplete = (responseParts: Part[]) => {
+                resolve(responseParts);
+            };
+            const handleError = (error: Error) => {
+                reject(error);
+            };
+            
+            const config = {
+                responseModalities: [Modality.IMAGE, Modality.TEXT],
+            };
+
+            sendStatelessMessageNonStreamApi(
+                apiKey,
+                modelId,
+                history,
+                parts,
+                config,
+                abortSignal,
+                handleError,
+                (responseParts, thoughts, usage, grounding) => handleComplete(responseParts)
+            );
+        });
+    }
+
     async sendMessageStream(
-        apiKey: string,
-        modelId: string,
-        historyWithLastPrompt: ChatHistoryItem[],
-        systemInstruction: string,
-        config: { temperature?: number; topP?: number },
-        showThoughts: boolean,
-        thinkingBudget: number,
-        isGoogleSearchEnabled: boolean,
-        isCodeExecutionEnabled: boolean,
-        isUrlContextEnabled: boolean,
+        chat: Chat,
+        parts: Part[],
         abortSignal: AbortSignal,
         onPart: (part: Part) => void,
         onThoughtChunk: (chunk: string) => void,
@@ -61,29 +88,34 @@ class GeminiServiceImpl implements GeminiService {
         onComplete: (usageMetadata?: UsageMetadata, groundingMetadata?: any) => void
     ): Promise<void> {
         return sendMessageStreamApi(
-            apiKey, modelId, historyWithLastPrompt, systemInstruction, config, showThoughts, thinkingBudget,
-            isGoogleSearchEnabled, isCodeExecutionEnabled, isUrlContextEnabled, abortSignal, onPart, onThoughtChunk, onError, onComplete
+            chat, parts, abortSignal, onPart, onThoughtChunk, onError, onComplete
         );
     }
 
     async sendMessageNonStream(
-        apiKey: string,
-        modelId: string,
-        historyWithLastPrompt: ChatHistoryItem[],
-        systemInstruction: string,
-        config: { temperature?: number; topP?: number },
-        showThoughts: boolean,
-        thinkingBudget: number,
-        isGoogleSearchEnabled: boolean,
-        isCodeExecutionEnabled: boolean,
-        isUrlContextEnabled: boolean,
+        chat: Chat,
+        parts: Part[],
         abortSignal: AbortSignal,
         onError: (error: Error) => void,
         onComplete: (parts: Part[], thoughtsText?: string, usageMetadata?: UsageMetadata, groundingMetadata?: any) => void
     ): Promise<void> {
         return sendMessageNonStreamApi(
-            apiKey, modelId, historyWithLastPrompt, systemInstruction, config, showThoughts, thinkingBudget,
-            isGoogleSearchEnabled, isCodeExecutionEnabled, isUrlContextEnabled, abortSignal, onError, onComplete
+            chat, parts, abortSignal, onError, onComplete
+        );
+    }
+
+    async sendStatelessMessageNonStream(
+        apiKey: string,
+        modelId: string,
+        history: ChatHistoryItem[],
+        parts: Part[],
+        config: any,
+        abortSignal: AbortSignal,
+        onError: (error: Error) => void,
+        onComplete: (parts: Part[], thoughtsText?: string, usageMetadata?: UsageMetadata, groundingMetadata?: any) => void
+    ): Promise<void> {
+        return sendStatelessMessageNonStreamApi(
+            apiKey, modelId, history, parts, config, abortSignal, onError, onComplete
         );
     }
 }

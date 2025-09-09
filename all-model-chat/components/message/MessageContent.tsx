@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Loader2, ChevronDown, Sigma, Zap } from 'lucide-react';
 
-import { ChatMessage, UploadedFile } from '../../types';
+import { ChatMessage, UploadedFile, AppSettings } from '../../types';
 import { FileDisplay } from './FileDisplay';
 import { translations } from '../../utils/appUtils';
 import { GroundedResponse } from './GroundedResponse';
@@ -74,13 +74,15 @@ interface MessageContentProps {
     isGraphvizRenderingEnabled: boolean;
     onSuggestionClick?: (suggestion: string) => void;
     t: (key: keyof typeof translations) => string;
+    appSettings: AppSettings;
 }
 
-export const MessageContent: React.FC<MessageContentProps> = React.memo(({ message, onImageClick, onOpenHtmlPreview, showThoughts, baseFontSize, expandCodeBlocksByDefault, isMermaidRenderingEnabled, isGraphvizRenderingEnabled, onSuggestionClick, t }) => {
+export const MessageContent: React.FC<MessageContentProps> = React.memo(({ message, onImageClick, onOpenHtmlPreview, showThoughts, baseFontSize, expandCodeBlocksByDefault, isMermaidRenderingEnabled, isGraphvizRenderingEnabled, onSuggestionClick, t, appSettings }) => {
     const { content, files, isLoading, thoughts, generationStartTime, generationEndTime, audioSrc, groundingMetadata, suggestions, isGeneratingSuggestions } = message;
     
     const showPrimaryThinkingIndicator = isLoading && !content && !audioSrc && (!showThoughts || !thoughts);
     const areThoughtsVisible = message.role === 'model' && thoughts && showThoughts;
+    const isQuadImageView = files && files.length === 4 && files.every(f => f.name.startsWith('generated-image-') || f.name.startsWith('edited-image-'));
 
     const lastThought = useMemo(() => {
         if (!thoughts) return null;
@@ -117,17 +119,45 @@ export const MessageContent: React.FC<MessageContentProps> = React.memo(({ messa
 
         return { title: lastHeading, content };
     }, [thoughts]);
+    
+    const prevIsLoadingRef = useRef(isLoading);
+
+    useEffect(() => {
+        // Trigger condition: message just finished loading
+        if (prevIsLoadingRef.current && !isLoading) {
+            if (appSettings.autoFullscreenHtml && message.role === 'model' && message.content) {
+                const regex = /```html\s*([\s\S]*?)\s*```/m;
+                const match = message.content.match(regex);
+                if (match && match[1]) {
+                    const htmlContent = match[1].trim();
+                    // Small delay to ensure the modal doesn't fight with other UI updates
+                    setTimeout(() => {
+                        onOpenHtmlPreview(htmlContent, { initialTrueFullscreen: true });
+                    }, 100);
+                }
+            }
+        }
+        // Update the ref for the next render
+        prevIsLoadingRef.current = isLoading;
+    }, [isLoading, appSettings.autoFullscreenHtml, message.content, message.role, onOpenHtmlPreview]);
+
 
     return (
         <>
             {files && files.length > 0 && (
-                <div className={`space-y-2 ${content || audioSrc ? 'mb-1.5 sm:mb-2' : ''}`}>
-                    {files.map((file) => <FileDisplay key={file.id} file={file} onImageClick={onImageClick} isFromMessageList={true} />)}
-                </div>
+                isQuadImageView ? (
+                    <div className={`grid grid-cols-2 gap-2 ${content || audioSrc ? 'mb-1.5 sm:mb-2' : ''}`}>
+                        {files.map((file) => <FileDisplay key={file.id} file={file} onImageClick={onImageClick} isFromMessageList={true} isGridView={true} />)}
+                    </div>
+                ) : (
+                    <div className={`space-y-2 ${content || audioSrc ? 'mb-1.5 sm:mb-2' : ''}`}>
+                        {files.map((file) => <FileDisplay key={file.id} file={file} onImageClick={onImageClick} isFromMessageList={true} />)}
+                    </div>
+                )
             )}
             
             {areThoughtsVisible && (
-                <details className="mb-1.5 p-2 rounded-lg bg-[var(--theme-bg-tertiary)] bg-opacity-50 border border-[var(--theme-border-secondary)] group">
+                <details className="mb-1.5 p-2 rounded-md bg-[var(--theme-bg-tertiary)] bg-opacity-50 border border-[var(--theme-border-secondary)] group">
                     <summary className="flex flex-col cursor-pointer text-sm font-medium text-[var(--theme-text-secondary)] hover:text-[var(--theme-text-primary)] list-none">
                         <div className="flex items-center justify-between w-full">
                             <span className="flex items-center">
@@ -144,7 +174,7 @@ export const MessageContent: React.FC<MessageContentProps> = React.memo(({ messa
                             </span>
                             <ChevronDown size={16} className="text-[var(--theme-text-tertiary)] group-open:rotate-180 transition-transform"/>
                         </div>
-                        {isLoading && lastThought && (
+                        {isLoading && lastThought && message.thinkingTimeMs === undefined && (
                             <div className="group-open:hidden mt-2 text-left w-full pr-4">
                                <h4 className="font-semibold text-[var(--theme-bg-model-message-text)] text-sm">
                                    {lastThought.title}

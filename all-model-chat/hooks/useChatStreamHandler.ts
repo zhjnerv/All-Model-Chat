@@ -1,27 +1,28 @@
 import { Dispatch, SetStateAction, useCallback, useRef } from 'react';
 import { AppSettings, ChatMessage, SavedChatSession, UploadedFile, ChatSettings as IndividualChatSettings } from '../types';
-import { Part, UsageMetadata } from '@google/genai';
+import { Part, UsageMetadata, Chat } from '@google/genai';
 import { useApiErrorHandler } from './useApiErrorHandler';
-import { generateUniqueId, logService, showNotification, getTranslator } from '../utils/appUtils';
+import { generateUniqueId, logService, showNotification, getTranslator, base64ToBlobUrl } from '../utils/appUtils';
 import { APP_LOGO_SVG_DATA_URI, APP_SETTINGS_KEY } from '../constants/appConstants';
 
-type SessionsUpdater = (updater: (prev: SavedChatSession[]) => SavedChatSession[]) => void;
+type SessionsUpdater = (updater: (prev: SavedChatSession[]) => SavedChatSession[], options?: { persist?: boolean }) => void;
 
 interface ChatStreamHandlerProps {
     appSettings: AppSettings;
     updateAndPersistSessions: SessionsUpdater;
     setLoadingSessionIds: Dispatch<SetStateAction<Set<string>>>;
     activeJobs: React.MutableRefObject<Map<string, AbortController>>;
+    chat: Chat | null;
 }
 
 const isToolMessage = (msg: ChatMessage): boolean => {
     if (!msg) return false;
-    if (msg.files && msg.files.length > 0) return true;
     if (!msg.content) return false;
     const content = msg.content.trim();
+    // A "tool message" is one that contains a code block or execution result.
+    // A message with just files is content, not a tool, so text should be appendable.
     return (content.startsWith('```') && content.endsWith('```')) ||
-           content.startsWith('<div class="tool-result') ||
-           content.startsWith('![Generated Image]');
+           content.startsWith('<div class="tool-result');
 };
 
 export const useChatStreamHandler = ({
@@ -74,7 +75,7 @@ export const useChatStreamHandler = ({
                 
                 let completedMessageForNotification: ChatMessage | null = null;
                 
-                const finalMessages = s.messages
+                let finalMessages = s.messages
                     .map(m => {
                         if (m.generationStartTime === generationStartTimeRef.current && m.isLoading) {
                             let thinkingTime = m.thinkingTimeMs;
@@ -86,10 +87,11 @@ export const useChatStreamHandler = ({
                             const promptTokens = isLastMessageOfRun ? (usageMetadata?.promptTokenCount) : undefined;
                             const completionTokens = (promptTokens !== undefined && turnTokens > 0) ? turnTokens - promptTokens : undefined;
                             cumulativeTotal += turnTokens;
+                            
                             const completedMessage = {
                                 ...m,
                                 isLoading: false,
-                                content: m.content + (abortController.signal.aborted ? "\n\n[Stopped by user]" : ""),
+                                content: m.content, // Do not append "[Stopped by user]"
                                 thoughts: currentChatSettings.showThoughts ? m.thoughts : undefined,
                                 generationEndTime: new Date(),
                                 thinkingTimeMs: thinkingTime,
@@ -100,8 +102,9 @@ export const useChatStreamHandler = ({
                                 cumulativeTotalTokens: cumulativeTotal,
                             };
                             
-                            const isEmpty = !completedMessage.content.trim() && !completedMessage.files?.length && !completedMessage.audioSrc;
-                            if (isEmpty) {
+                            const isEmpty = !completedMessage.content.trim() && !completedMessage.files?.length && !completedMessage.audioSrc && !completedMessage.thoughts?.trim();
+                            
+                            if (isEmpty && !abortController.signal.aborted) {
                                 completedMessage.role = 'error';
                                 completedMessage.content = t('empty_response_error');
                             }
@@ -112,8 +115,13 @@ export const useChatStreamHandler = ({
                             return completedMessage;
                         }
                         return m;
-                    })
-                    .filter(m => m.role !== 'model' || m.content.trim() !== '' || (m.files && m.files.length > 0) || m.audioSrc);
+                    });
+                
+                // If the generation was stopped by the user, we keep the message bubble even if it's empty.
+                // Otherwise, we filter out any empty model messages that might have been created (e.g., for tool calls).
+                if (!abortController.signal.aborted) {
+                    finalMessages = finalMessages.filter(m => m.role !== 'model' || m.content.trim() !== '' || (m.files && m.files.length > 0) || m.audioSrc || (m.thoughts && m.thoughts.trim() !== ''));
+                }
                 
                 if (appSettings.isCompletionNotificationEnabled && completedMessageForNotification && document.hidden) {
                     const notificationBody = (completedMessageForNotification.content || "Media or tool response received").substring(0, 150) + (completedMessageForNotification.content && completedMessageForNotification.content.length > 150 ? '...' : '');
@@ -127,7 +135,7 @@ export const useChatStreamHandler = ({
                 }
 
                 return {...s, messages: finalMessages, settings: s.settings};
-            }));
+            }), { persist: true }); // Explicitly persist on complete.
             setLoadingSessionIds(prev => { const next = new Set(prev); next.delete(currentSessionId); return next; });
             activeJobs.current.delete(generationId);
         };
@@ -138,27 +146,45 @@ export const useChatStreamHandler = ({
                 firstContentPartTimeRef.current = new Date();
                 isFirstContentPart = true;
             }
-            updateAndPersistSessions(prev => prev.map(s => {
-                if (s.id !== currentSessionId) return s;
-                let messages = [...s.messages];
+        
+            updateAndPersistSessions(prev => {
+                // Use findIndex for performance instead of mapping the whole array
+                const sessionIndex = prev.findIndex(s => s.id === currentSessionId);
+                if (sessionIndex === -1) return prev;
+        
+                // Create copies only for the path that is changing
+                const newSessions = [...prev];
+                const sessionToUpdate = { ...newSessions[sessionIndex] };
+                newSessions[sessionIndex] = sessionToUpdate;
+        
+                let messages = [...sessionToUpdate.messages];
+                sessionToUpdate.messages = messages;
+        
+                // Update thinking time on the first content part
                 if (isFirstContentPart) {
                     const thinkingTime = generationStartTimeRef.current ? (firstContentPartTimeRef.current!.getTime() - generationStartTimeRef.current.getTime()) : null;
-                    const messageToUpdate = [...messages].reverse().find(m => m.isLoading && m.role === 'model' && m.generationStartTime === generationStartTimeRef.current);
-                    if (messageToUpdate && thinkingTime !== null) {
-                        messageToUpdate.thinkingTimeMs = thinkingTime;
-                        messages = [...messages];
+                    for (let i = messages.length - 1; i >= 0; i--) {
+                        const msg = messages[i];
+                        if (msg.isLoading && msg.role === 'model' && msg.generationStartTime === generationStartTimeRef.current) {
+                            messages[i] = { ...msg, thinkingTimeMs: thinkingTime ?? msg.thinkingTimeMs };
+                            break;
+                        }
                     }
                 }
+        
                 let lastMessage = messages.length > 0 ? messages[messages.length - 1] : null;
+                const lastMessageIndex = messages.length - 1;
                 const anyPart = part as any;
+        
                 const createNewMessage = (content: string): ChatMessage => {
                     const id = generateUniqueId();
                     newModelMessageIds.add(id);
                     return { id, role: 'model', content, timestamp: new Date(), isLoading: true, generationStartTime: generationStartTimeRef.current! };
                 };
+        
                 if (anyPart.text) {
-                     if (lastMessage && lastMessage.role === 'model' && lastMessage.isLoading && !isToolMessage(lastMessage)) {
-                        lastMessage.content += anyPart.text;
+                    if (lastMessage && lastMessage.role === 'model' && lastMessage.isLoading && !isToolMessage(lastMessage)) {
+                        messages[lastMessageIndex] = { ...lastMessage, content: lastMessage.content + anyPart.text };
                     } else {
                         messages.push(createNewMessage(anyPart.text));
                     }
@@ -181,28 +207,58 @@ export const useChatStreamHandler = ({
                 } else if (anyPart.inlineData) {
                     const { mimeType, data } = anyPart.inlineData;
                     if (mimeType.startsWith('image/')) {
+                        const dataUrl = base64ToBlobUrl(data, mimeType);
                         const newFile: UploadedFile = {
-                            id: generateUniqueId(), name: 'Generated Image', type: mimeType, size: data.length, dataUrl: `data:${mimeType};base64,${data}`, base64Data: data, uploadState: 'active'
+                            id: generateUniqueId(),
+                            name: 'Generated Image',
+                            type: mimeType,
+                            size: data.length,
+                            dataUrl: dataUrl,
+                            uploadState: 'active'
                         };
-                        const newMessage = createNewMessage('');
-                        newMessage.files = [newFile];
-                        messages.push(newMessage);
+                        
+                        if (lastMessage && lastMessage.role === 'model' && lastMessage.isLoading) {
+                            messages[lastMessageIndex] = { ...lastMessage, files: [...(lastMessage.files || []), newFile] };
+                        } else {
+                            const newMessage = createNewMessage('');
+                            newMessage.files = [newFile];
+                            messages.push(newMessage);
+                        }
                     }
                 }
-                return { ...s, messages };
-            }));
+                
+                return newSessions;
+            }, { persist: false });
         };
+        
 
         const onThoughtChunk = (thoughtChunk: string) => {
-            updateAndPersistSessions(prev => prev.map(s => {
-                if (s.id !== currentSessionId) return s;
-                let messages = [...s.messages];
-                let lastMessage = messages.length > 0 ? messages[messages.length - 1] : null;
-                if (lastMessage && lastMessage.role === 'model' && lastMessage.isLoading) {
-                    lastMessage.thoughts = (lastMessage.thoughts || '') + thoughtChunk;
+            updateAndPersistSessions(prev => {
+                const sessionIndex = prev.findIndex(s => s.id === currentSessionId);
+                if (sessionIndex === -1) return prev;
+        
+                // Create copies only for the updated path
+                const newSessions = [...prev];
+                const sessionToUpdate = { ...newSessions[sessionIndex] };
+                newSessions[sessionIndex] = sessionToUpdate;
+        
+                const messages = [...sessionToUpdate.messages];
+                sessionToUpdate.messages = messages;
+                
+                const lastMessageIndex = messages.length - 1;
+                if (lastMessageIndex >= 0) {
+                    const lastMessage = messages[lastMessageIndex];
+                    if (lastMessage.role === 'model' && lastMessage.isLoading) {
+                        const updatedMessage = {
+                            ...lastMessage,
+                            thoughts: (lastMessage.thoughts || '') + thoughtChunk,
+                        };
+                        messages[lastMessageIndex] = updatedMessage;
+                    }
                 }
-                return { ...s, messages };
-            }));
+                
+                return newSessions;
+            }, { persist: false });
         };
         
         firstContentPartTimeRef.current = null;

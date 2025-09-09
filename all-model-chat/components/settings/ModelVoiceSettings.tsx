@@ -3,8 +3,7 @@ import { ModelOption } from '../../types';
 import { Loader2, Info, Mic, Volume2 } from 'lucide-react';
 import { AVAILABLE_TTS_VOICES, AVAILABLE_TRANSCRIPTION_MODELS } from '../../constants/appConstants';
 import { getResponsiveValue } from '../../utils/appUtils';
-import { Tooltip } from './shared/Tooltip';
-import { Select } from './shared/Tooltip';
+import { Tooltip, Select, Toggle } from './shared/Tooltip';
 
 interface ModelVoiceSettingsProps {
   modelId: string;
@@ -18,6 +17,8 @@ interface ModelVoiceSettingsProps {
   setIsTranscriptionThinkingEnabled: (value: boolean) => void;
   useFilesApiForImages: boolean;
   setUseFilesApiForImages: (value: boolean) => void;
+  generateQuadImages: boolean;
+  setGenerateQuadImages: (value: boolean) => void;
   ttsVoice: string;
   setTtsVoice: (value: string) => void;
   t: (key: string) => string;
@@ -27,6 +28,7 @@ export const ModelVoiceSettings: React.FC<ModelVoiceSettingsProps> = ({
   modelId, setModelId, isModelsLoading, modelsLoadingError, availableModels,
   transcriptionModelId, setTranscriptionModelId, isTranscriptionThinkingEnabled, setIsTranscriptionThinkingEnabled,
   useFilesApiForImages, setUseFilesApiForImages,
+  generateQuadImages, setGenerateQuadImages,
   ttsVoice, setTtsVoice, t
 }) => {
   const iconSize = getResponsiveValue(14, 16);
@@ -80,11 +82,7 @@ export const ModelVoiceSettings: React.FC<ModelVoiceSettingsProps> = ({
             <Info size={12} className="text-[var(--theme-text-tertiary)] cursor-help" />
           </Tooltip>
         </span>
-        <div className="relative">
-          <input id="transcription-thinking-toggle" type="checkbox" className="sr-only peer" checked={isTranscriptionThinkingEnabled} onChange={() => setIsTranscriptionThinkingEnabled(!isTranscriptionThinkingEnabled)} />
-          <div className="w-11 h-6 bg-[var(--theme-bg-tertiary)] rounded-full peer peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-offset-2 peer-focus:ring-offset-[var(--theme-bg-secondary)] peer-focus:ring-[var(--theme-border-focus)] peer-checked:bg-[var(--theme-bg-accent)] transition-colors duration-200 ease-in-out border border-[var(--theme-border-secondary)] peer-checked:border-transparent"></div>
-          <div className="absolute left-1 top-1 w-4 h-4 bg-white rounded-full shadow transform transition-transform duration-200 ease-in-out peer-checked:translate-x-5"></div>
-        </div>
+        <Toggle id="transcription-thinking-toggle" checked={isTranscriptionThinkingEnabled} onChange={setIsTranscriptionThinkingEnabled} />
       </label>
       <Select
         id="tts-voice-select"
@@ -107,11 +105,16 @@ export const ModelVoiceSettings: React.FC<ModelVoiceSettingsProps> = ({
             <Info size={12} className="text-[var(--theme-text-tertiary)] cursor-help" />
           </Tooltip>
         </span>
-        <div className="relative">
-          <input id="use-files-api-toggle" type="checkbox" className="sr-only peer" checked={useFilesApiForImages} onChange={() => setUseFilesApiForImages(!useFilesApiForImages)} />
-          <div className="w-11 h-6 bg-[var(--theme-bg-tertiary)] rounded-full peer peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-offset-2 peer-focus:ring-offset-[var(--theme-bg-secondary)] peer-focus:ring-[var(--theme-border-focus)] peer-checked:bg-[var(--theme-bg-accent)] transition-colors duration-200 ease-in-out border border-[var(--theme-border-secondary)] peer-checked:border-transparent"></div>
-          <div className="absolute left-1 top-1 w-4 h-4 bg-white rounded-full shadow transform transition-transform duration-200 ease-in-out peer-checked:translate-x-5"></div>
-        </div>
+        <Toggle id="use-files-api-toggle" checked={useFilesApiForImages} onChange={setUseFilesApiForImages} />
+      </label>
+      <label htmlFor="quad-image-toggle" className="flex items-center justify-between py-1 cursor-pointer">
+        <span className="text-sm font-medium text-[var(--theme-text-secondary)] flex items-center">
+          {t('settings_generateQuadImages_label')}
+          <Tooltip text={t('settings_generateQuadImages_tooltip')}>
+            <Info size={12} className="text-[var(--theme-text-tertiary)] cursor-help" />
+          </Tooltip>
+        </span>
+        <Toggle id="quad-image-toggle" checked={generateQuadImages} onChange={setGenerateQuadImages} />
       </label>
     </div>
   );

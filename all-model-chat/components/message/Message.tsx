@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useRef } from 'react';
 import { ClipboardCopy, Check, Trash2 } from 'lucide-react';
-import { ChatMessage, UploadedFile, ThemeColors } from '../../types';
+import { ChatMessage, UploadedFile, ThemeColors, AppSettings } from '../../types';
 import { MessageContent } from './MessageContent';
 import { translations } from '../../utils/appUtils';
 import { MessageActions } from './MessageActions';
@@ -13,7 +13,7 @@ interface MessageProps {
     onDeleteMessage: (messageId: string) => void;
     onRetryMessage: (messageId: string) => void; 
     onImageClick: (file: UploadedFile) => void;
-    onOpenHtmlPreview: (html: string, options?: { initialTrueFullscreen?: boolean }) => void;
+    onOpenHtmlPreview: (html: string, options?: { initialTruefullscreen?: boolean }) => void;
     showThoughts: boolean;
     themeColors: ThemeColors; 
     themeId: string;
@@ -25,6 +25,7 @@ interface MessageProps {
     ttsMessageId: string | null;
     onSuggestionClick?: (suggestion: string) => void;
     t: (key: keyof typeof translations) => string;
+    appSettings: AppSettings;
 }
 
 export const Message: React.FC<MessageProps> = React.memo((props) => {
@@ -38,11 +39,11 @@ export const Message: React.FC<MessageProps> = React.memo((props) => {
 
     const isModelThinkingOrHasThoughts = message.role === 'model' && (message.isLoading || (message.thoughts && props.showThoughts));
     
-    const messageContainerClasses = `flex items-start gap-2 sm:gap-3 group ${isGrouped ? 'mt-1' : 'mt-3 sm:mt-4'} ${message.role === 'user' ? 'justify-end' : 'justify-start'}`;
-    const bubbleClasses = `w-fit max-w-[calc(100%-2.75rem)] sm:max-w-3xl lg:max-w-4xl xl:max-w-6xl p-2.5 sm:p-3 rounded-2xl shadow-md flex flex-col min-w-0 ${isModelThinkingOrHasThoughts ? 'sm:min-w-[320px]' : ''}`;
+    const messageContainerClasses = `flex items-start gap-1 sm:gap-1.5 group ${isGrouped ? 'mt-1' : 'mt-3 sm:mt-4'} ${message.role === 'user' ? 'justify-end' : 'justify-start'}`;
+    const bubbleClasses = `w-fit max-w-[calc(100%-2.75rem)] sm:max-w-3xl lg:max-w-4xl xl:max-w-6xl p-1.5 sm:p-3 rounded-2xl shadow-md flex flex-col min-w-0 ${isModelThinkingOrHasThoughts ? 'sm:min-w-[320px]' : ''}`;
 
     const roleSpecificBubbleClasses = {
-        user: 'bg-[var(--theme-bg-user-message)] text-[var(--theme-bg-user-message-text)] rounded-lg',
+        user: 'bg-[var(--theme-bg-model-message)] text-[var(--theme-bg-model-message-text)] rounded-lg',
         model: 'bg-[var(--theme-bg-model-message)] text-[var(--theme-bg-model-message-text)] rounded-lg',
         error: 'bg-[var(--theme-bg-error-message)] text-[var(--theme-bg-error-message-text)] rounded-lg',
     };

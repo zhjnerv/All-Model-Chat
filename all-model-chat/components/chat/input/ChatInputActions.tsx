@@ -1,5 +1,5 @@
 import React from 'react';
-import { ArrowUp, Ban, X, Edit2, Loader2, Mic } from 'lucide-react';
+import { ArrowUp, Square, X, Edit2, Loader2, Mic, Languages } from 'lucide-react';
 import { translations } from '../../../utils/appUtils';
 import { AttachmentAction, AttachmentMenu } from './AttachmentMenu';
 import { ToolsMenu } from './ToolsMenu';
@@ -26,6 +26,9 @@ export const ChatInputActions: React.FC<ChatInputActionsProps> = ({
   isWaitingForUpload,
   t,
   onCancelRecording,
+  onTranslate,
+  isTranslating,
+  inputText,
 }) => {
   const micIconSize = 18;
   const sendIconSize = 18;
@@ -61,6 +64,20 @@ export const ChatInputActions: React.FC<ChatInputActionsProps> = ({
             )}
             <button
                 type="button"
+                onClick={onTranslate}
+                disabled={!inputText.trim() || isLoading || isEditing || disabled || isTranscribing || isMicInitializing || isTranslating}
+                className={`${buttonBaseClass} bg-transparent text-[var(--theme-text-tertiary)] hover:bg-[var(--theme-bg-tertiary)]`}
+                aria-label={isTranslating ? t('translating_button_title') : t('translate_button_title')}
+                title={isTranslating ? t('translating_button_title') : t('translate_button_title')}
+            >
+                {isTranslating ? (
+                    <Loader2 size={micIconSize} className="animate-spin text-[var(--theme-text-link)]" />
+                ) : (
+                    <Languages size={micIconSize} />
+                )}
+            </button>
+            <button
+                type="button"
                 onClick={onRecordButtonClick}
                 disabled={isLoading || isEditing || disabled || isTranscribing || isMicInitializing}
                 className={`${buttonBaseClass} ${isRecording ? 'mic-recording-animate' : 'bg-transparent text-[var(--theme-text-tertiary)] hover:bg-[var(--theme-bg-tertiary)]'}`}
@@ -83,7 +100,7 @@ export const ChatInputActions: React.FC<ChatInputActionsProps> = ({
             </button>
 
             {isLoading ? ( 
-                <button type="button" onClick={onStopGenerating} className={`${buttonBaseClass} bg-[var(--theme-bg-danger)] hover:bg-[var(--theme-bg-danger-hover)] text-[var(--theme-icon-stop)]`} aria-label={t('stopGenerating_aria')} title={t('stopGenerating_title')}><Ban size={sendIconSize} /></button>
+                <button type="button" onClick={onStopGenerating} className={`${buttonBaseClass} bg-[var(--theme-bg-danger)] hover:bg-[var(--theme-bg-danger-hover)] text-[var(--theme-icon-stop)]`} aria-label={t('stopGenerating_aria')} title={t('stopGenerating_title')}><Square size={14} fill="currentColor" /></button>
             ) : isEditing ? (
                 <>
                     <button type="button" onClick={onCancelEdit} className={`${buttonBaseClass} bg-transparent hover:bg-[var(--theme-bg-tertiary)] text-[var(--theme-text-secondary)]`} aria-label={t('cancelEdit_aria')} title={t('cancelEdit_title')}><X size={sendIconSize} /></button>

@@ -20,13 +20,23 @@ export const fileToBase64 = (file: File): Promise<string> => {
 };
 
 
-export const fileToDataUrl = (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result as string);
-        reader.onerror = (error) => reject(error);
-        reader.readAsDataURL(file);
-    });
+export const fileToBlobUrl = (file: File): string => {
+    return URL.createObjectURL(file);
+};
+
+export const base64ToBlob = (base64: string, mimeType: string): Blob => {
+    const byteCharacters = atob(base64);
+    const byteNumbers = new Array(byteCharacters.length);
+    for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+    }
+    const byteArray = new Uint8Array(byteNumbers);
+    return new Blob([byteArray], { type: mimeType });
+};
+
+export const base64ToBlobUrl = (base64: string, mimeType: string): string => {
+    const blob = base64ToBlob(base64, mimeType);
+    return URL.createObjectURL(blob);
 };
 
 export const generateUniqueId = () => `chat-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
@@ -57,39 +67,45 @@ export const buildContentParts = async (
   const filesToProcess = files || [];
   
   const processedResults = await Promise.all(filesToProcess.map(async (file) => {
-    // Create a shallow copy to avoid direct mutation of state objects
+    // Create a shallow copy to avoid direct mutation of state objects.
+    // We will be careful not to add large data to this object.
     const newFile = { ...file };
     let part: ContentPart | null = null;
-
+    
+    // Explicitly remove potentially large fields from the object that will be stored in state.
+    delete newFile.base64Data;
+    
     if (file.isProcessing || file.error || file.uploadState !== 'active') {
       return { file: newFile, part };
     }
     
     if (SUPPORTED_IMAGE_MIME_TYPES.includes(file.type) && !file.fileUri) {
-      let base64Data = file.base64Data;
+      // Base64 data is generated on-the-fly for the API call,
+      // but NOT stored back into the `newFile` object that goes into React state.
+      let base64DataForApi: string | undefined;
       
-      if (!base64Data) { // Only convert if not already present
-        if (file.rawFile) {
-          try {
-            base64Data = await fileToBase64(file.rawFile);
-          } catch (error) {
-            logService.error(`Failed to convert rawFile to base64 for ${file.name}`, { error });
-          }
-        } else if (file.dataUrl?.startsWith('blob:')) {
-          try {
-            const response = await fetch(file.dataUrl);
-            const blob = await response.blob();
-            const tempFile = new File([blob], file.name, { type: file.type });
-            base64Data = await fileToBase64(tempFile);
-          } catch (error) {
-            logService.error(`Failed to fetch blob and convert to base64 for ${file.name}`, { error });
-          }
+      const fileSource = file.rawFile;
+      const urlSource = file.dataUrl?.startsWith('blob:') ? file.dataUrl : undefined;
+
+      if (fileSource && fileSource instanceof File) {
+        try {
+          base64DataForApi = await fileToBase64(fileSource);
+        } catch (error) {
+          logService.error(`Failed to convert rawFile to base64 for ${file.name}`, { error });
+        }
+      } else if (urlSource) {
+        try {
+          const response = await fetch(urlSource);
+          const blob = await response.blob();
+          const tempFile = new File([blob], file.name, { type: file.type });
+          base64DataForApi = await fileToBase64(tempFile);
+        } catch (error) {
+          logService.error(`Failed to fetch blob and convert to base64 for ${file.name}`, { error });
         }
       }
       
-      if (base64Data) {
-        newFile.base64Data = base64Data;
-        part = { inlineData: { mimeType: file.type, data: base64Data } };
+      if (base64DataForApi) {
+        part = { inlineData: { mimeType: file.type, data: base64DataForApi } };
       }
     } else if (file.fileUri && file.type === 'video/youtube-link') {
         part = { fileData: { mimeType: 'video/youtube', fileUri: file.fileUri } };
@@ -117,39 +133,10 @@ export const createChatHistoryForApi = async (msgs: ChatMessage[]): Promise<Chat
     const historyItemsPromises = msgs
       .filter(msg => msg.role === 'user' || msg.role === 'model')
       .map(async (msg) => {
-        let apiParts: ContentPart[];
-        if (msg.role === 'user') {
-          const { contentParts } = await buildContentParts(msg.content, msg.files);
-          apiParts = contentParts;
-        } else {
-          apiParts = [{ text: msg.content || "" }];
-        }
-        return { role: msg.role as 'user' | 'model', parts: apiParts };
+        // Use buildContentParts for both user and model messages to handle text and files consistently.
+        const { contentParts } = await buildContentParts(msg.content, msg.files);
+        return { role: msg.role as 'user' | 'model', parts: contentParts };
       });
       
     return Promise.all(historyItemsPromises);
   };
-
-export const applyImageCachePolicy = (sessions: SavedChatSession[]): SavedChatSession[] => {
-    const sessionsCopy = JSON.parse(JSON.stringify(sessions)); // Deep copy to avoid direct state mutation
-    if (sessionsCopy.length > 5) {
-        logService.debug('Applying image cache policy: Pruning images from sessions older than 5th.');
-        // Prune images from the 6th session onwards
-        for (let i = 5; i < sessionsCopy.length; i++) {
-            const session = sessionsCopy[i];
-            if (session.messages && Array.isArray(session.messages)) {
-                session.messages.forEach((message: ChatMessage) => {
-                    if (message.files && Array.isArray(message.files)) {
-                        message.files.forEach((file: UploadedFile) => {
-                            if (SUPPORTED_IMAGE_MIME_TYPES.includes(file.type)) {
-                                if (file.dataUrl) delete file.dataUrl;
-                                if (file.base64Data) delete file.base64Data;
-                            }
-                        });
-                    }
-                });
-            }
-        }
-    }
-    return sessionsCopy;
-};
